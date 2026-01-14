@@ -9,7 +9,7 @@ func main() {
 
 	addr := net.UDPAddr{
 		IP:   net.IPv4zero, 	// 0.0.0.0 Lytt på alle nettverksgrensesnitt
-		Port: 30000, // porten som lyttes på
+		Port: 20019, // porten som lyttes på
 	}
 
 	// Opprett UDP-"socket"

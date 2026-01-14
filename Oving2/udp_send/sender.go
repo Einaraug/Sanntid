@@ -6,8 +6,8 @@ import (
 
 func main() {
 	addr := net.UDPAddr{
-		IP:   net.ParseIP("255.255.255.255"),  //Send til alle på lokalnettet
-		Port: 30000,
+		IP:   net.ParseIP("10.100.23.11"),  //Send til alle på lokalnettet
+		Port: 20019,
 	}
 
 	conn, err := net.ListenUDP("udp", nil) //Lager UDP socket
@@ -21,7 +21,7 @@ func main() {
 		panic(err)
 	}
 
-	message := []byte("Hei") //Meldingen vi vil sende
+	message := []byte("Hei Matheus") //Meldingen vi vil sende
 
 	conn.WriteToUDP(message, &addr) //sender meldingen
 }
