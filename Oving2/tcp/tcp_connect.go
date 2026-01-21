@@ -40,8 +40,8 @@ func main() {
 	fmt.Println(string(buf[:n]))
 
 	listenaddr := net.TCPAddr{
-		IP:   net.ParseIP("10.100.23.29"),
-		Port: 20019,
+		IP:   net.ParseIP("10.100.23.172"),
+		Port: 20021,
 	}
 
 	// 3. Start å lytte (dette gjør deg til SERVER)
@@ -51,7 +51,7 @@ func main() {
 	}
 	defer listener.Close()
 
-	message = []byte("Connect to: 10.100.23.29:20019\000") //Meldingen vi vil sende
+	message = []byte("Connect to: 10.100.23.172:20021\000") //Meldingen vi vil sende
 
 	conn.Write(message) //sender meldingen
 	con, err := listener.AcceptTCP()
