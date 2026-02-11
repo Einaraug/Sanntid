@@ -1,1 +1,4 @@
-/target
+beist_heis/target/
+beist_heis/Cargo.lock/
+beist_heis/Cargo.toml/
+.vscode/
