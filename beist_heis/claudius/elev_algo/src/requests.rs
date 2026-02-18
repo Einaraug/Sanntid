@@ -103,6 +103,14 @@ impl Elevator {
             Dirn::Stop => true,
         }
     }
+
+    pub fn should_clear_immediately(&self, btn_floor: usize, btn_type: Button) -> bool {
+        self.floor == btn_floor as i32
+            && (self.dirn == Dirn::Up && btn_type == Button::HallUp
+                || self.dirn == Dirn::Down && btn_type == Button::HallDown
+                || self.dirn == Dirn::Stop
+                || btn_type == Button::Cab)
+    }
 }
 
 #[cfg(test)]
@@ -256,5 +264,40 @@ mod tests {
         let e = elevator_at_floor(1);
         // Dirn::Stop always stops
         assert!(e.should_stop());
+    }
+
+    #[test]
+    fn test_should_clear_immediately_cab_at_floor() {
+        let mut e = elevator_at_floor(2);
+        e.dirn = Dirn::Up;
+        assert!(e.should_clear_immediately(2, Button::Cab));
+    }
+
+    #[test]
+    fn test_should_clear_immediately_hall_up_going_up() {
+        let mut e = elevator_at_floor(1);
+        e.dirn = Dirn::Up;
+        assert!(e.should_clear_immediately(1, Button::HallUp));
+    }
+
+    #[test]
+    fn test_should_not_clear_immediately_hall_down_going_up() {
+        let mut e = elevator_at_floor(1);
+        e.dirn = Dirn::Up;
+        assert!(!e.should_clear_immediately(1, Button::HallDown));
+    }
+
+    #[test]
+    fn test_should_clear_immediately_when_stopped() {
+        let mut e = elevator_at_floor(1);
+        e.dirn = Dirn::Stop;
+        assert!(e.should_clear_immediately(1, Button::HallDown));
+    }
+
+    #[test]
+    fn test_should_not_clear_immediately_different_floor() {
+        let mut e = elevator_at_floor(1);
+        e.dirn = Dirn::Stop;
+        assert!(!e.should_clear_immediately(2, Button::Cab));
     }
 }
