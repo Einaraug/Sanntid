@@ -145,7 +145,6 @@ impl Elevator {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::{Elevator, Button, Dirn, Behaviour};
 
     fn elevator_at_floor(floor: i32) -> Elevator {
