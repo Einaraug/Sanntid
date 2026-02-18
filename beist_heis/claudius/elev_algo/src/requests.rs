@@ -111,6 +111,36 @@ impl Elevator {
                 || self.dirn == Dirn::Stop
                 || btn_type == Button::Cab)
     }
+
+    pub fn clear_at_current_floor(&self) -> Self {
+        let mut e = self.clone();
+        if e.floor < 0 {
+            return e;
+        }
+        let floor = e.floor as usize;
+
+        e.requests[floor][Button::Cab.to_index()] = false;
+
+        match e.dirn {
+            Dirn::Up => {
+                if !e.requests_above() && !e.requests[floor][Button::HallUp.to_index()] {
+                    e.requests[floor][Button::HallDown.to_index()] = false;
+                }
+                e.requests[floor][Button::HallUp.to_index()] = false;
+            }
+            Dirn::Down => {
+                if !e.requests_below() && !e.requests[floor][Button::HallDown.to_index()] {
+                    e.requests[floor][Button::HallUp.to_index()] = false;
+                }
+                e.requests[floor][Button::HallDown.to_index()] = false;
+            }
+            Dirn::Stop => {
+                e.requests[floor][Button::HallUp.to_index()] = false;
+                e.requests[floor][Button::HallDown.to_index()] = false;
+            }
+        }
+        e
+    }
 }
 
 #[cfg(test)]
@@ -299,5 +329,47 @@ mod tests {
         let mut e = elevator_at_floor(1);
         e.dirn = Dirn::Stop;
         assert!(!e.should_clear_immediately(2, Button::Cab));
+    }
+
+    #[test]
+    fn test_clear_at_floor_clears_cab() {
+        let mut e = elevator_at_floor(2);
+        e.requests[2][Button::Cab.to_index()] = true;
+        let e = e.clear_at_current_floor();
+        assert!(!e.requests[2][Button::Cab.to_index()]);
+    }
+
+    #[test]
+    fn test_clear_at_floor_going_up_clears_hall_up() {
+        let mut e = elevator_at_floor(1);
+        e.dirn = Dirn::Up;
+        e.requests[1][Button::HallUp.to_index()] = true;
+        e.requests[1][Button::HallDown.to_index()] = true;
+        e.requests[3][Button::Cab.to_index()] = true;  // Request above to keep HallDown
+        let e = e.clear_at_current_floor();
+        assert!(!e.requests[1][Button::HallUp.to_index()]);
+        // HallDown should remain if there are requests above
+        assert!(e.requests[1][Button::HallDown.to_index()]);
+    }
+
+    #[test]
+    fn test_clear_at_floor_going_up_clears_hall_down_if_no_requests_above() {
+        let mut e = elevator_at_floor(3);
+        e.dirn = Dirn::Up;
+        e.requests[3][Button::HallDown.to_index()] = true;
+        let e = e.clear_at_current_floor();
+        // No requests above, so HallDown should be cleared too
+        assert!(!e.requests[3][Button::HallDown.to_index()]);
+    }
+
+    #[test]
+    fn test_clear_at_floor_stopped_clears_both_hall() {
+        let mut e = elevator_at_floor(2);
+        e.dirn = Dirn::Stop;
+        e.requests[2][Button::HallUp.to_index()] = true;
+        e.requests[2][Button::HallDown.to_index()] = true;
+        let e = e.clear_at_current_floor();
+        assert!(!e.requests[2][Button::HallUp.to_index()]);
+        assert!(!e.requests[2][Button::HallDown.to_index()]);
     }
 }
