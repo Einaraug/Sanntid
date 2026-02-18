@@ -109,6 +109,40 @@ impl Elevator {
 
         (e, output)
     }
+
+    pub fn on_door_timeout(&self) -> (Self, FsmOutput) {
+        let mut e = self.clone();
+        let mut output = FsmOutput::new();
+
+        if e.behaviour != Behaviour::DoorOpen {
+            return (e, output);
+        }
+
+        let pair = e.choose_direction();
+        e.dirn = pair.dirn;
+        e.behaviour = pair.behaviour;
+
+        match e.behaviour {
+            Behaviour::DoorOpen => {
+                output.start_door_timer = true;
+                let cleared = e.clear_at_current_floor();
+                for btn in 0..N_BUTTONS {
+                    if e.requests[e.floor as usize][btn] && !cleared.requests[e.floor as usize][btn] {
+                        if let Some(b) = Button::from_index(btn) {
+                            output.clear_lights.push((e.floor as usize, b));
+                        }
+                    }
+                }
+                e = cleared;
+            }
+            Behaviour::Moving | Behaviour::Idle => {
+                output.door_light = Some(false);
+                output.motor_direction = Some(e.dirn);
+            }
+        }
+
+        (e, output)
+    }
 }
 
 #[cfg(test)]
@@ -217,5 +251,49 @@ mod tests {
 
         assert_eq!(e.behaviour, Behaviour::Moving);
         assert!(output.motor_direction.is_none());
+    }
+
+    #[test]
+    fn test_on_door_timeout_becomes_idle() {
+        let mut e = Elevator::new();
+        e.floor = 2;
+        e.behaviour = Behaviour::DoorOpen;
+        e.dirn = Dirn::Stop;
+
+        let (e, output) = e.on_door_timeout();
+
+        assert_eq!(e.behaviour, Behaviour::Idle);
+        assert_eq!(output.door_light, Some(false));
+        assert_eq!(output.motor_direction, Some(Dirn::Stop));
+    }
+
+    #[test]
+    fn test_on_door_timeout_starts_moving() {
+        let mut e = Elevator::new();
+        e.floor = 1;
+        e.behaviour = Behaviour::DoorOpen;
+        e.dirn = Dirn::Up;
+        e.requests[3][Button::Cab.to_index()] = true;
+
+        let (e, output) = e.on_door_timeout();
+
+        assert_eq!(e.behaviour, Behaviour::Moving);
+        assert_eq!(e.dirn, Dirn::Up);
+        assert_eq!(output.door_light, Some(false));
+        assert_eq!(output.motor_direction, Some(Dirn::Up));
+    }
+
+    #[test]
+    fn test_on_door_timeout_stays_open_if_requests_here() {
+        let mut e = Elevator::new();
+        e.floor = 2;
+        e.behaviour = Behaviour::DoorOpen;
+        e.dirn = Dirn::Stop;
+        e.requests[2][Button::Cab.to_index()] = true;
+
+        let (e, output) = e.on_door_timeout();
+
+        assert_eq!(e.behaviour, Behaviour::DoorOpen);
+        assert!(output.start_door_timer);
     }
 }
