@@ -1,6 +1,12 @@
 // Request algorithms - to be implemented
 
-use crate::elevator::{Elevator, N_FLOORS, N_BUTTONS};
+use crate::elevator::{Elevator, N_FLOORS, N_BUTTONS, Dirn, Behaviour};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DirnBehaviour {
+    pub dirn: Dirn,
+    pub behaviour: Behaviour,
+}
 
 impl Elevator {
     pub fn requests_above(&self) -> bool {
@@ -38,6 +44,44 @@ impl Elevator {
             }
         }
         false
+    }
+
+    pub fn choose_direction(&self) -> DirnBehaviour {
+        match self.dirn {
+            Dirn::Up => {
+                if self.requests_above() {
+                    DirnBehaviour { dirn: Dirn::Up, behaviour: Behaviour::Moving }
+                } else if self.requests_here() {
+                    DirnBehaviour { dirn: Dirn::Down, behaviour: Behaviour::DoorOpen }
+                } else if self.requests_below() {
+                    DirnBehaviour { dirn: Dirn::Down, behaviour: Behaviour::Moving }
+                } else {
+                    DirnBehaviour { dirn: Dirn::Stop, behaviour: Behaviour::Idle }
+                }
+            }
+            Dirn::Down => {
+                if self.requests_below() {
+                    DirnBehaviour { dirn: Dirn::Down, behaviour: Behaviour::Moving }
+                } else if self.requests_here() {
+                    DirnBehaviour { dirn: Dirn::Up, behaviour: Behaviour::DoorOpen }
+                } else if self.requests_above() {
+                    DirnBehaviour { dirn: Dirn::Up, behaviour: Behaviour::Moving }
+                } else {
+                    DirnBehaviour { dirn: Dirn::Stop, behaviour: Behaviour::Idle }
+                }
+            }
+            Dirn::Stop => {
+                if self.requests_here() {
+                    DirnBehaviour { dirn: Dirn::Stop, behaviour: Behaviour::DoorOpen }
+                } else if self.requests_above() {
+                    DirnBehaviour { dirn: Dirn::Up, behaviour: Behaviour::Moving }
+                } else if self.requests_below() {
+                    DirnBehaviour { dirn: Dirn::Down, behaviour: Behaviour::Moving }
+                } else {
+                    DirnBehaviour { dirn: Dirn::Stop, behaviour: Behaviour::Idle }
+                }
+            }
+        }
     }
 }
 
@@ -96,5 +140,53 @@ mod tests {
         let mut e = elevator_at_floor(1);
         e.requests[1][Button::Cab.to_index()] = true;
         assert!(e.requests_here());
+    }
+
+    #[test]
+    fn test_choose_direction_idle_no_requests() {
+        let e = elevator_at_floor(1);
+        let result = e.choose_direction();
+        assert_eq!(result.dirn, Dirn::Stop);
+        assert_eq!(result.behaviour, Behaviour::Idle);
+    }
+
+    #[test]
+    fn test_choose_direction_going_up_requests_above() {
+        let mut e = elevator_at_floor(1);
+        e.dirn = Dirn::Up;
+        e.requests[3][Button::Cab.to_index()] = true;
+        let result = e.choose_direction();
+        assert_eq!(result.dirn, Dirn::Up);
+        assert_eq!(result.behaviour, Behaviour::Moving);
+    }
+
+    #[test]
+    fn test_choose_direction_going_up_requests_here() {
+        let mut e = elevator_at_floor(2);
+        e.dirn = Dirn::Up;
+        e.requests[2][Button::HallDown.to_index()] = true;
+        let result = e.choose_direction();
+        assert_eq!(result.dirn, Dirn::Down);
+        assert_eq!(result.behaviour, Behaviour::DoorOpen);
+    }
+
+    #[test]
+    fn test_choose_direction_going_up_requests_below() {
+        let mut e = elevator_at_floor(3);
+        e.dirn = Dirn::Up;
+        e.requests[0][Button::Cab.to_index()] = true;
+        let result = e.choose_direction();
+        assert_eq!(result.dirn, Dirn::Down);
+        assert_eq!(result.behaviour, Behaviour::Moving);
+    }
+
+    #[test]
+    fn test_choose_direction_stopped_request_here() {
+        let mut e = elevator_at_floor(1);
+        e.dirn = Dirn::Stop;
+        e.requests[1][Button::Cab.to_index()] = true;
+        let result = e.choose_direction();
+        assert_eq!(result.dirn, Dirn::Stop);
+        assert_eq!(result.behaviour, Behaviour::DoorOpen);
     }
 }
