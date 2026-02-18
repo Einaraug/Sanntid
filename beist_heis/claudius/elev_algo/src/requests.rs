@@ -1,6 +1,6 @@
 // Request algorithms - to be implemented
 
-use crate::elevator::{Elevator, N_FLOORS, N_BUTTONS, Dirn, Behaviour};
+use crate::elevator::{Elevator, N_FLOORS, N_BUTTONS, Dirn, Behaviour, Button};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DirnBehaviour {
@@ -81,6 +81,26 @@ impl Elevator {
                     DirnBehaviour { dirn: Dirn::Stop, behaviour: Behaviour::Idle }
                 }
             }
+        }
+    }
+
+    pub fn should_stop(&self) -> bool {
+        if self.floor < 0 {
+            return false;
+        }
+        let floor = self.floor as usize;
+        match self.dirn {
+            Dirn::Down => {
+                self.requests[floor][Button::HallDown.to_index()]
+                    || self.requests[floor][Button::Cab.to_index()]
+                    || !self.requests_below()
+            }
+            Dirn::Up => {
+                self.requests[floor][Button::HallUp.to_index()]
+                    || self.requests[floor][Button::Cab.to_index()]
+                    || !self.requests_above()
+            }
+            Dirn::Stop => true,
         }
     }
 }
@@ -188,5 +208,53 @@ mod tests {
         let result = e.choose_direction();
         assert_eq!(result.dirn, Dirn::Stop);
         assert_eq!(result.behaviour, Behaviour::DoorOpen);
+    }
+
+    #[test]
+    fn test_should_stop_cab_request_at_floor() {
+        let mut e = elevator_at_floor(2);
+        e.dirn = Dirn::Up;
+        e.requests[2][Button::Cab.to_index()] = true;
+        assert!(e.should_stop());
+    }
+
+    #[test]
+    fn test_should_stop_hall_up_when_going_up() {
+        let mut e = elevator_at_floor(1);
+        e.dirn = Dirn::Up;
+        e.requests[1][Button::HallUp.to_index()] = true;
+        assert!(e.should_stop());
+    }
+
+    #[test]
+    fn test_should_stop_hall_down_when_going_down() {
+        let mut e = elevator_at_floor(2);
+        e.dirn = Dirn::Down;
+        e.requests[2][Button::HallDown.to_index()] = true;
+        assert!(e.should_stop());
+    }
+
+    #[test]
+    fn test_should_stop_no_more_requests_in_direction() {
+        let mut e = elevator_at_floor(3);
+        e.dirn = Dirn::Up;
+        // No requests above floor 3, should stop
+        assert!(e.should_stop());
+    }
+
+    #[test]
+    fn test_should_not_stop_requests_ahead() {
+        let mut e = elevator_at_floor(1);
+        e.dirn = Dirn::Up;
+        e.requests[3][Button::Cab.to_index()] = true;
+        // Requests above, no request at current floor
+        assert!(!e.should_stop());
+    }
+
+    #[test]
+    fn test_should_stop_when_stopped() {
+        let e = elevator_at_floor(1);
+        // Dirn::Stop always stops
+        assert!(e.should_stop());
     }
 }
