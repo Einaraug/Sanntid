@@ -81,6 +81,34 @@ impl Elevator {
 
         (e, output)
     }
+
+    pub fn on_floor_arrival(&self, new_floor: i32) -> (Self, FsmOutput) {
+        let mut e = self.clone();
+        let mut output = FsmOutput::new();
+
+        e.floor = new_floor;
+        output.floor_indicator = Some(new_floor);
+
+        if e.behaviour == Behaviour::Moving && e.should_stop() {
+            output.motor_direction = Some(Dirn::Stop);
+            output.door_light = Some(true);
+
+            let cleared = e.clear_at_current_floor();
+            for btn in 0..N_BUTTONS {
+                if e.requests[e.floor as usize][btn] && !cleared.requests[e.floor as usize][btn] {
+                    if let Some(b) = Button::from_index(btn) {
+                        output.clear_lights.push((e.floor as usize, b));
+                    }
+                }
+            }
+            e = cleared;
+
+            output.start_door_timer = true;
+            e.behaviour = Behaviour::DoorOpen;
+        }
+
+        (e, output)
+    }
 }
 
 #[cfg(test)]
@@ -149,5 +177,45 @@ mod tests {
 
         // Should restart timer, not queue request
         assert!(output.start_door_timer);
+    }
+
+    #[test]
+    fn test_on_floor_arrival_updates_floor() {
+        let mut e = Elevator::new();
+        e.behaviour = Behaviour::Moving;
+        e.dirn = Dirn::Up;
+
+        let (e, output) = e.on_floor_arrival(2);
+
+        assert_eq!(e.floor, 2);
+        assert_eq!(output.floor_indicator, Some(2));
+    }
+
+    #[test]
+    fn test_on_floor_arrival_stops_when_should_stop() {
+        let mut e = Elevator::new();
+        e.behaviour = Behaviour::Moving;
+        e.dirn = Dirn::Up;
+        e.requests[2][Button::Cab.to_index()] = true;
+
+        let (e, output) = e.on_floor_arrival(2);
+
+        assert_eq!(e.behaviour, Behaviour::DoorOpen);
+        assert_eq!(output.motor_direction, Some(Dirn::Stop));
+        assert_eq!(output.door_light, Some(true));
+        assert!(output.start_door_timer);
+    }
+
+    #[test]
+    fn test_on_floor_arrival_continues_when_should_not_stop() {
+        let mut e = Elevator::new();
+        e.behaviour = Behaviour::Moving;
+        e.dirn = Dirn::Up;
+        e.requests[3][Button::Cab.to_index()] = true;
+
+        let (e, output) = e.on_floor_arrival(1);
+
+        assert_eq!(e.behaviour, Behaviour::Moving);
+        assert!(output.motor_direction.is_none());
     }
 }
