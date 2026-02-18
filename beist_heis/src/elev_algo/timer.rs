@@ -1,4 +1,5 @@
 use std::time::Instant;
+use std::time::Duration;
 
 #[derive(Debug, Clone)]
 pub struct Timer {
@@ -13,7 +14,7 @@ impl Timer {
     }
 
     pub fn start(&mut self, duration_secs: f64) {
-        self.end_time = Some(Instant::now() + std::time::Duration::from_secs_f64(duration_secs));
+        self.end_time = Some(Instant::now() + Duration::from_secs_f64(duration_secs));
     }
 
     pub fn stop(&mut self) {

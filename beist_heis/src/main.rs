@@ -1,6 +1,8 @@
-// main.rs
 mod elevio;
 mod elev_algo;
+mod world_view;
+mod network;
+mod orders;
 
 use elevio::elev as hw;
 use elevio::poll;
@@ -12,7 +14,7 @@ use std::time::Duration;
 
 fn main() {
     let hw_elev = hw::Elevator::init("localhost:15657", 4).unwrap();
-    let mut elev = Elevator::new();
+    let mut elev: Elevator = Elevator::new();
     let mut timer = Timer::new();
 
     // Spawn poll threads

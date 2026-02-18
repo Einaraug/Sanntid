@@ -6,8 +6,7 @@ use socket2::Socket;
 use std::error;
 use std::str;
 
-#[path = "./sock.rs"]
-mod sock;
+use super::sock;
 
 
 //Send function

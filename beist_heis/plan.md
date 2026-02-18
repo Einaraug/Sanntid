@@ -2,7 +2,6 @@
 2: Translate network.go - Einar
 3: Translate cost_fns - Matheus
 4: Translate "elevator" - Fredrik
-4.1: Translate elev.algo
 
 5: Fix WorldView
 6: Implement timer
