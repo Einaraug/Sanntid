@@ -15,13 +15,14 @@ pub struct ElevatorMap {
 }
 
 pub struct PeerAvailability{
-    peer_availability: HashMap<ElevId, bool>
+    peer_availability: HashMap<ElevId, bool>,
+
 }
 #[derive(Clone)]
 pub struct HallOrder{
     floor: i32,
     dir: ElevatorDir, //TODO: Define
-    count: u64
+    state: enum
 }
 pub struct WorldView {
     self_id: i32,
@@ -29,4 +30,10 @@ pub struct WorldView {
     elevator_map: ElevatorMap,
     peer_availability: PeerAvailability,
     hall_table: Vec<HallOrder>,
+    count: Vec<Vec<u64>>
 }
+//Should we have one large list where all events have its own id?
+
+enum idx:
+    1 = Hall_uP_floor=1
+    2 = hall_down_floor=1
