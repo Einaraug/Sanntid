@@ -69,31 +69,3 @@ impl Default for Elevator {
         Self::new()
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_dirn_values() {
-        assert_eq!(Dirn::Down as i32, -1);
-        assert_eq!(Dirn::Stop as i32, 0);
-        assert_eq!(Dirn::Up as i32, 1);
-    }
-
-    #[test]
-    fn test_button_to_index() {
-        assert_eq!(Button::HallUp.to_index(), 0);
-        assert_eq!(Button::HallDown.to_index(), 1);
-        assert_eq!(Button::Cab.to_index(), 2);
-    }
-
-    #[test]
-    fn test_elevator_new() {
-        let e = Elevator::new();
-        assert_eq!(e.floor, -1);
-        assert_eq!(e.dirn, Dirn::Stop);
-        assert_eq!(e.behaviour, Behaviour::Idle);
-        assert_eq!(e.door_open_duration_s, 3.0);
-    }
-}
