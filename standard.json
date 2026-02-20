@@ -1,0 +1,17 @@
+{
+  "hallRequests": [[false, false], [true, false], [false, false], [false, true]],
+  "states": {
+    "elev1": {
+      "behaviour": "moving",
+      "floor": 1,
+      "direction": "up",
+      "cabRequests": [false, false, false, false]
+    },
+    "elev2": {
+      "behaviour": "idle",
+      "floor": 0,
+      "direction": "stop",
+      "cabRequests": [false, false, true, false]
+    }
+  }
+}

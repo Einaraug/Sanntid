@@ -1,7 +1,10 @@
+use serde::Serialize;
+
 pub const N_FLOORS: usize = 4;
 pub const N_BUTTONS: usize = 3;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all "lowercase")]
 #[repr(i32)]
 pub enum Dirn {
     Down = -1,
@@ -9,7 +12,8 @@ pub enum Dirn {
     Up = 1,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all "camelCase")]
 pub enum Button {
     HallUp,
     HallDown,
