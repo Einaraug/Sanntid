@@ -6,4 +6,10 @@
 5: Fix WorldView
 6: Implement timer
 7: Decide on threads
-8:
+
+Plan 20.02:
+1: Finish order module: Matheus
+2: More about world_view
+3: Fix / spawn cost_fn: Fredrik
+4: Get to know network_module: Einar
+5: Test order and network modules: Matheus + Einar
