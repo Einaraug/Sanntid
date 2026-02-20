@@ -2,6 +2,7 @@ use crossbeam_channel as cbc;
 use log::warn;
 use serde::Deserialize;
 use socket2::Socket;
+use std::mem::MaybeUninit;
 
 use std::error;
 use std::str;
@@ -10,7 +11,7 @@ use super::sock;
 
 
 //Send function
-pub fn tx<T: serde::Serialize>(port: u16, ch: cbc::Receiver<T>) -> std::io::Result<()> { //T is a placeholder for any type (WorldView:)
+pub fn udp_send<T: serde::Serialize>(port: u16, ch: cbc::Receiver<T>) -> std::io::Result<()> { //T is a placeholder for any type (WorldView:)
     let (s, addr) = sock::new_tx(port)?; //Creates the sending socket and broadcast address
     loop {
         let data = ch.recv().unwrap(); //Waits until something arrives on the channel. unwrap() means "crash if this fails"
@@ -22,12 +23,11 @@ pub fn tx<T: serde::Serialize>(port: u16, ch: cbc::Receiver<T>) -> std::io::Resu
 }
 
 
-//Receive function. Very similar signature to tx but mirrored:
-pub fn rx<T: serde::de::DeserializeOwned>(port: u16, ch: cbc::Sender<T>) -> std::io::Result<()> {
+//Receive function. Very similar to tx but mirrored:
+pub fn udp_receive<T: serde::de::DeserializeOwned>(port: u16, ch: cbc::Sender<T>) -> std::io::Result<()> {
     let s = sock::new_rx(port)?;
 
-    let mut buf = [0; 1024]; //buf is a 1024 byte scratch buffer that gets overwritten each time a packet arrives. mut means it can be modified.
-
+    let mut buf: [MaybeUninit<u8>; 1024] = [MaybeUninit::uninit(); 1024];
     loop {
         match parse_packet(&s, &mut buf) { //waits for a UDP packet and tries to deserialize it. match handles two cases:
             Ok(d) => ch.send(d).unwrap(), // successfully got a packet, forward it onto the channel so your main code can receive it
@@ -40,11 +40,12 @@ pub fn rx<T: serde::de::DeserializeOwned>(port: u16, ch: cbc::Sender<T>) -> std:
 //Helper function
 fn parse_packet<'a, T: Deserialize<'a>>(
     s: &'_ Socket,
-    buf: &'a mut [u8; 1024],
+    buf: &'a mut [MaybeUninit<u8>; 1024],
 ) -> Result<T, Box<dyn error::Error>> {
-    let n = s.recv(buf)?; //Waits for a UDP packet and writes the bytes into buf. n is how many bytes arrived
-    let msg = str::from_utf8(&buf[..n])?; //Converts the received bytes into a string - from_utf8 checks that they form valid text - if someone sends garbage bytes this would fail.
-    serde_json::from_str::<T>(&msg).map_err(|e| e.into()) //Converts the JSON string back into your struct T
+    let n = s.recv(buf)?;
+    let bytes = unsafe { std::slice::from_raw_parts(buf.as_ptr() as *const u8, n) };
+    let msg = str::from_utf8(bytes)?;
+    serde_json::from_str::<T>(msg).map_err(|e| e.into())
 }
 
 /*
