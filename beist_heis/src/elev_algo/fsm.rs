@@ -1,5 +1,5 @@
 use crate::elev_algo::elevator::*;
-
+//TODO: elevator.requests have been removed.
 #[derive(Debug, Clone, Default)]
 pub struct FsmOutput {
     pub motor_direction: Option<Dirn>,
@@ -58,7 +58,9 @@ impl Elevator {
                         let cleared = e.clear_at_current_floor();
                         // Collect lights to clear
                         for btn in 0..N_BUTTONS {
-                            if e.requests[e.floor as usize][btn] && !cleared.requests[e.floor as usize][btn] {
+                            if e.requests[e.floor as usize][btn]
+                                && !cleared.requests[e.floor as usize][btn]
+                            {
                                 if let Some(b) = Button::from_index(btn) {
                                     output.clear_lights.push((e.floor as usize, b));
                                 }
@@ -125,7 +127,8 @@ impl Elevator {
                 output.start_door_timer = true;
                 let cleared = e.clear_at_current_floor();
                 for btn in 0..N_BUTTONS {
-                    if e.requests[e.floor as usize][btn] && !cleared.requests[e.floor as usize][btn] {
+                    if e.requests[e.floor as usize][btn] && !cleared.requests[e.floor as usize][btn]
+                    {
                         if let Some(b) = Button::from_index(btn) {
                             output.clear_lights.push((e.floor as usize, b));
                         }

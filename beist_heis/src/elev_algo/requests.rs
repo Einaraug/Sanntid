@@ -50,35 +50,71 @@ impl Elevator {
         match self.dirn {
             Dirn::Up => {
                 if self.requests_above() {
-                    DirnBehaviour { dirn: Dirn::Up, behaviour: Behaviour::Moving }
+                    DirnBehaviour {
+                        dirn: Dirn::Up,
+                        behaviour: Behaviour::Moving,
+                    }
                 } else if self.requests_here() {
-                    DirnBehaviour { dirn: Dirn::Down, behaviour: Behaviour::DoorOpen }
+                    DirnBehaviour {
+                        dirn: Dirn::Down,
+                        behaviour: Behaviour::DoorOpen,
+                    }
                 } else if self.requests_below() {
-                    DirnBehaviour { dirn: Dirn::Down, behaviour: Behaviour::Moving }
+                    DirnBehaviour {
+                        dirn: Dirn::Down,
+                        behaviour: Behaviour::Moving,
+                    }
                 } else {
-                    DirnBehaviour { dirn: Dirn::Stop, behaviour: Behaviour::Idle }
+                    DirnBehaviour {
+                        dirn: Dirn::Stop,
+                        behaviour: Behaviour::Idle,
+                    }
                 }
             }
             Dirn::Down => {
                 if self.requests_below() {
-                    DirnBehaviour { dirn: Dirn::Down, behaviour: Behaviour::Moving }
+                    DirnBehaviour {
+                        dirn: Dirn::Down,
+                        behaviour: Behaviour::Moving,
+                    }
                 } else if self.requests_here() {
-                    DirnBehaviour { dirn: Dirn::Up, behaviour: Behaviour::DoorOpen }
+                    DirnBehaviour {
+                        dirn: Dirn::Up,
+                        behaviour: Behaviour::DoorOpen,
+                    }
                 } else if self.requests_above() {
-                    DirnBehaviour { dirn: Dirn::Up, behaviour: Behaviour::Moving }
+                    DirnBehaviour {
+                        dirn: Dirn::Up,
+                        behaviour: Behaviour::Moving,
+                    }
                 } else {
-                    DirnBehaviour { dirn: Dirn::Stop, behaviour: Behaviour::Idle }
+                    DirnBehaviour {
+                        dirn: Dirn::Stop,
+                        behaviour: Behaviour::Idle,
+                    }
                 }
             }
             Dirn::Stop => {
                 if self.requests_here() {
-                    DirnBehaviour { dirn: Dirn::Stop, behaviour: Behaviour::DoorOpen }
+                    DirnBehaviour {
+                        dirn: Dirn::Stop,
+                        behaviour: Behaviour::DoorOpen,
+                    }
                 } else if self.requests_above() {
-                    DirnBehaviour { dirn: Dirn::Up, behaviour: Behaviour::Moving }
+                    DirnBehaviour {
+                        dirn: Dirn::Up,
+                        behaviour: Behaviour::Moving,
+                    }
                 } else if self.requests_below() {
-                    DirnBehaviour { dirn: Dirn::Down, behaviour: Behaviour::Moving }
+                    DirnBehaviour {
+                        dirn: Dirn::Down,
+                        behaviour: Behaviour::Moving,
+                    }
                 } else {
-                    DirnBehaviour { dirn: Dirn::Stop, behaviour: Behaviour::Idle }
+                    DirnBehaviour {
+                        dirn: Dirn::Stop,
+                        behaviour: Behaviour::Idle,
+                    }
                 }
             }
         }
