@@ -5,6 +5,7 @@ pub const N_BUTTONS: usize = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[repr(i32)]
+#[serde(rename_all = "camelCase")]
 pub enum Dirn {
     Down = -1,
     Stop = 0,
@@ -58,7 +59,7 @@ pub struct Elevator {
 impl Elevator {
     pub fn new() -> Self {
         Self {
-            floor: -1,
+            floor: 0,
             dirn: Dirn::Stop,
             requests: [[false; N_BUTTONS]; N_FLOORS],
             behaviour: Behaviour::Idle,

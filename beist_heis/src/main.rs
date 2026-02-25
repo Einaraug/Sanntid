@@ -15,7 +15,26 @@ use crossbeam_channel as cbc;
 use std::thread;
 use std::time::Duration;
 
+fn test_assigner() {
+    use world_view::WorldView;
+    use elev_algo::elevator::Button;
+    use orders::OrderState;
+    use assigner::save_assigner_input;
+
+    let mut wv = WorldView::new(1);
+    wv.set_peer_availability(1, true);
+    wv.set_peer_availability(2, true);
+    wv.update_order_table(1, Button::HallUp, 1, OrderState::Confirmed);
+    wv.update_order_table(3, Button::HallDown, 2, OrderState::Confirmed);
+
+    save_assigner_input(&wv, "assigner_input.json").unwrap();
+    println!("saved! check assigner_input.json");
+}
+
 fn main() {
+    test_assigner();
+    return; 
+
     let hw_elev = hw::Elevator::init("localhost:15657", 4).unwrap();
     let mut elev: Elevator = Elevator::new();
     let mut timer = Timer::new();

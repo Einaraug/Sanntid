@@ -76,6 +76,9 @@ pub fn assign_hall_requests(
 
 pub fn save_assigner_input(wv: &WorldView, path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let input = build_input(wv);
-    fs::write(path, serde_json::to_string(&input)?)?;
+    fs::write(path, serde_json::to_string_pretty(&input)?)?;
     Ok(())
 }
+
+
+/// Run hall_request_assigner with hall_request_assigner --input "$(cat assigner_input.json)"
