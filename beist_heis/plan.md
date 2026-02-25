@@ -1,15 +1,5 @@
-1: Translate elevio.go - Matheus 
-2: Translate network.go - Einar
-3: Translate cost_fns - Matheus
-4: Translate "elevator" - Fredrik
-
-5: Fix WorldView
-6: Implement timer
-7: Decide on threads
-
-Plan 20.02:
-1: Finish order module: Matheus
-2: More about world_view
-3: Fix / spawn cost_fn: Fredrik
-4: Get to know network_module: Einar
-5: Test order and network modules: Matheus + Einar
+25.02
+1: WorldView to hallrequest_assigner (JSON): Fredrik
+2: "Refactor" order_table to handle order object: Matheus
+3: Make own counter module: Einar
+4: TBD

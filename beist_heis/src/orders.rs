@@ -1,11 +1,24 @@
 use crate::elev_algo::elevator::{Button, N_FLOORS};
 use crate::world_view::N_NODES;
+
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OrderState {
     None,
     Unconfirmed,
     Confirmed,
 }
+
+pub struct HallOrder{
+    pub state: OrderState,
+    pub id: i32,
+}
+
+set_hall_requests(hall, cab)[
+    hallRequests[:][:] = hall[if OrderState == Confirmed && order.id = None]
+        hall[i][j] = Assigned
+]
+
 
 #[derive(Debug, Clone)]
 pub struct OrderTable {
