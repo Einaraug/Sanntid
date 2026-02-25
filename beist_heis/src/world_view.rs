@@ -4,7 +4,6 @@ use crate::orders::*;
 pub const N_NODES: usize = 3;
 type ElevId = u32;
 
-
 #[derive(Clone)]
 pub struct ElevatorMap {
     elevator: [Elevator; N_NODES],
@@ -41,6 +40,8 @@ impl PeerAvailability {
     }
 }
 
+
+//TODO: Generalize names
 pub struct WorldView {
     self_id: i32,
     elevator_map: ElevatorMap,
@@ -48,7 +49,7 @@ pub struct WorldView {
     order_table: OrderTable,
     counts: Counters,
 }
-pub impl WorldView {
+impl WorldView {
     pub fn new(self_id: i32) -> Self {
         Self {
             self_id: self_id,

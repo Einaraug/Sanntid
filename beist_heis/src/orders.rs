@@ -54,7 +54,7 @@ impl OrderTable {
         }
     }
 
-    pub fn update_cab(&mut self, floor: usize, node_id: usize, state: OrderState) {
+    pub fn update_cab(&mut self, floor: usize, node_id: i32, state: OrderState) {
         self.cab[floor][node_id] = state;
     }
    
@@ -66,7 +66,7 @@ impl OrderTable {
         }
     }   
 
-    pub fn get_cab_state(&self, floor: usize, node_id: usize) -> OrderState {
+    pub fn get_cab_state(&self, floor: usize, node_id: i32) -> OrderState {
         self.cab[floor][node_id]
     }
 
@@ -75,11 +75,11 @@ impl OrderTable {
         self.update_hall_id(floor, button, 0);
     }
 
-    pub fn clear_cab(&mut self, floor: usize, node_id: usize) {
+    pub fn clear_cab(&mut self, floor: usize, node_id: i32) {
         self.update_cab(floor, node_id, OrderState::None);
     }
 
-    pub fn on_button_press(&mut self, floor: usize, button: Button) {
+    pub fn on_button_press(&mut self, floor: usize, button: Button, node_id: i32) {
         match button {
             Button::HallUp | Button::HallDown => {
                 self.update_hall_state(floor, button, OrderState::Unconfirmed);
@@ -91,3 +91,4 @@ impl OrderTable {
         }
     }
 }
+ 
