@@ -9,35 +9,47 @@ pub enum OrderState {
     Confirmed,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct HallOrder{
     pub state: OrderState,
     pub id: i32,
 }
 
-set_hall_requests(hall, cab)[
-    hallRequests[:][:] = hall[if OrderState == Confirmed && order.id = None]
-        hall[i][j] = Assigned
-]
-
+impl HallOrder{
+    pub fn new() -> Self {
+        Self{
+            state: OrderState::None,
+            id: 0, //0 means no node owns the order
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct OrderTable {
-    pub hall: [[OrderState; 2]; N_FLOORS],
+    pub hall: [[HallOrder; 2]; N_FLOORS],
     pub cab:  [[OrderState; N_NODES]; N_FLOORS],
 }
 
 impl OrderTable {
     pub fn new() -> Self {
         Self {
-            hall: [[OrderState::None; 2]; N_FLOORS],
+            hall: [[HallOrder::new(); 2]; N_FLOORS],
             cab:  [[OrderState::None; N_NODES]; N_FLOORS],
         }
     }
 
-    pub fn update_hall(&mut self, floor: usize, button: Button, state: OrderState) {
+    pub fn update_hall_state(&mut self, floor: usize, button: Button, state: OrderState) {
         match button {
-            Button::HallUp   => self.hall[floor][0] = state,
-            Button::HallDown => self.hall[floor][1] = state,
+            Button::HallUp   => self.hall[floor][0].state = state,
+            Button::HallDown => self.hall[floor][1].state = state,
+            Button::Cab      => panic!("update_hall called with Button::Cab"),
+        }
+    }
+
+    pub fn update_hall_id(&mut self, floor: usize, button: Button, id: i32) {
+        match button {
+            Button::HallUp   => self.hall[floor][0].id = id,
+            Button::HallDown => self.hall[floor][1].id = id,
             Button::Cab      => panic!("update_hall called with Button::Cab"),
         }
     }
@@ -48,8 +60,8 @@ impl OrderTable {
    
     pub fn get_hall_state(&self, floor: usize, button: Button) -> OrderState {
     match button {
-        Button::HallUp   => self.hall[floor][0],
-        Button::HallDown => self.hall[floor][1],
+        Button::HallUp   => self.hall[floor][0].state,
+        Button::HallDown => self.hall[floor][1].state,
         Button::Cab      => panic!("Use get_cab_state for cab orders"),
         }
     }   
@@ -59,10 +71,23 @@ impl OrderTable {
     }
 
     pub fn clear_hall(&mut self, floor: usize, button: Button) {
-        self.update_hall(floor, button, OrderState::None);
+        self.update_hall_state(floor, button, OrderState::None);
+        self.update_hall_id(floor, button, 0);
     }
 
     pub fn clear_cab(&mut self, floor: usize, node_id: usize) {
         self.update_cab(floor, node_id, OrderState::None);
+    }
+
+    pub fn on_button_press(&mut self, floor: usize, button: Button) {
+        match button {
+            Button::HallUp | Button::HallDown => {
+                self.update_hall_state(floor, button, OrderState::Unconfirmed);
+                self.update_hall_id(floor, button, 0); //0 indicates unassigned order
+            }
+            Button::Cab => {
+                self.update_cab(floor, node_id, OrderState::Unconfirmed);
+            }
+        }
     }
 }
