@@ -1,8 +1,11 @@
+#![allow(dead_code, unused_imports)]
+
 mod elevio;
 mod elev_algo;
 mod world_view;
 mod network;
 mod orders;
+mod assigner;
 
 use elevio::elev as hw;
 use elevio::poll;

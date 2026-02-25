@@ -1,7 +1,9 @@
+use serde::Serialize;
+
 pub const N_FLOORS: usize = 4;
 pub const N_BUTTONS: usize = 3;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[repr(i32)]
 pub enum Dirn {
     Down = -1,
@@ -35,7 +37,8 @@ impl Button {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Behaviour {
     #[default]
     Idle,
@@ -43,7 +46,7 @@ pub enum Behaviour {
     Moving,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Elevator {
     pub floor: i32,
     pub dirn: Dirn,
