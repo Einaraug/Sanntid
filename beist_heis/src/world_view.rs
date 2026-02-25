@@ -23,7 +23,6 @@ impl ElevatorMap {
     }
 }
 
-
 #[derive(Clone)]  
 pub struct PeerAvailability{
     peer_availability: [bool; N_NODES],
@@ -79,5 +78,23 @@ pub impl WorldView {
 
     pub fn get_counts(&self) -> &Counters {
         &self.counts
+    }
+
+    // Setters
+    pub fn update_elevator(&mut self, node_id: usize, elevator: Elevator) {
+        self.elevator_map.update_elevator(node_id, elevator);
+    }
+
+    pub fn set_peer_availability(&mut self, node_id: usize, available: bool) {
+        self.peer_availability.set_availability(node_id, available);
+    }
+
+    pub fn update_order_table(&mut self, floor: usize, button: Button, node_id: usize, state: OrderState) {
+       self.order_table.update_hall_state(floor, button, state);
+       self.order_table.update_hall_id(floor, button, node_id);
+    }
+
+    pub fn update_cab_order(&mut self, floor: usize, node_id: usize, state: OrderState) {
+        self.order_table.update_cab(floor, node_id, state);
     }
 }
