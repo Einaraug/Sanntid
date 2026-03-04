@@ -1,7 +1,6 @@
 use crate::elev_algo::elevator::{Button, N_FLOORS};
 use crate::world_view::N_NODES;
 
-
 #[derive(Clone)]
 pub struct Counters{
     hall_order: [[u64; 2]; N_FLOORS],

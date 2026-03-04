@@ -1,5 +1,7 @@
 use crate::elev_algo::elevator::{Button, Elevator, N_BUTTONS, N_FLOORS};
 use crate::orders::*;
+use crate::counters::*;
+
 
 pub const N_NODES: usize = 3;
 type ElevId = usize;
@@ -14,10 +16,10 @@ impl ElevatorMap {
             elevator: [Elevator::new(); N_NODES], //WorldView owns the elevators, so we can initialize them here. A node only owns its own id.
         }
     }
-    pub fn get_elevator(&self, node_id: usize) -> &Elevator {
+    pub fn get(&self, node_id: usize) -> &Elevator {
         &self.elevator[node_id]
     }
-    pub fn update_elevator(&mut self, node_id: usize, elevator: Elevator) {
+    pub fn set(&mut self, node_id: usize, elevator: Elevator) {
         self.elevator[node_id] = elevator;
     }
 }
@@ -32,28 +34,26 @@ impl PeerAvailability {
             peer_availability: [false; N_NODES], //Initially, all peers are unavailable until they announce themselves. WorldView owns the availability, so we can initialize it here.
         }
     }
-    pub fn get_availability(&self, node_id: usize) -> bool {
+    pub fn get(&self, node_id: usize) -> bool {
         self.peer_availability[node_id]
     }
-    pub fn update_availability(&mut self, node_id: usize, available: bool) {
+    pub fn set(&mut self, node_id: usize, available: bool) {
         self.peer_availability[node_id] = available;
     }
     pub fn iter(&self) -> impl Iterator<Item = (usize, bool)> {
         self.peer_availability.iter().copied().enumerate()
     }
 }
-
-
 //TODO: Generalize names
 pub struct WorldView {
-    self_id: u32,
+    self_id: usize,
     elevator_map: ElevatorMap,
     peer_availability: PeerAvailability,
     order_table: OrderTable,
     counters: Counters,
 }
 impl WorldView {
-    pub fn new(self_id: u32) -> Self {
+    pub fn new(self_id: usize) -> Self {
         Self {
             self_id: self_id,
             elevator_map: ElevatorMap::new(),
@@ -64,8 +64,8 @@ impl WorldView {
     }
 
     // Getters :: Should the return type be references?
-    pub fn get_self_id(&self) -> u32 {
-        self.self_id
+    pub fn get_self_id(&self) -> &usize {
+        &self.self_id
     }
 
     pub fn get_elevator_map(&self) -> &ElevatorMap {
@@ -84,34 +84,44 @@ impl WorldView {
         &self.counters
     }
 
+    // --BUTTON PRESS HANDLER --
+    pub fn on_button_press(&mut self, floor: usize, button: Button) {
+        match button {
+            Button::HallUp | Button::HallDown => {
+                let order = self.order_table.get_hall_order_mut(floor, button as usize);
+                order.set_state(OrderState::Unconfirmed);
+                order.set_node_id(UNASSIGNED_NODE);
+            }
+            Button::Cab => {
+                let order = self.order_table.get_cab_order_mut(floor, self.self_id);
+                order.set_state(OrderState::Unconfirmed);
+            }
+        }
+    }
+
     pub fn is_all_acked(&self, seen_by: &[bool; N_NODES]) -> bool {
-        for (node_id, available) in self.get_peer_availability().iter() {
+        for (node_id, available) in self.peer_availability.iter() {
             if available && !seen_by[node_id] {
                 return false;
             }
         }
         true
     }
-
-    pub fn modify_order_states(&mut self){
-        let order_table = self.get_order_table();        
-        for floor in 0..N_FLOORS{
-
-            //HANDLE CAB ORDERS
-            for node_id in 0..N_NODES{
-                let mut cab_order = order_table.get_cab_order(floor, node_id);
-                let seen_by = cab_order.seen_by;
-                if self.is_all_acked(&seen_by){
-                    cab_order.update_state(OrderState::Confirmed);
-                }
+    pub fn modify_order_states(&mut self) {
+        for floor in 0..N_FLOORS {
+        // HANDLE CAB ORDERS
+        for node_id in 0..N_NODES {
+            let seen_by = self.order_table.get_cab_order(floor, node_id).get_seen_by();
+            if self.is_all_acked(&seen_by) {
+                self.order_table.get_cab_order_mut(floor, node_id).set_state(OrderState::Confirmed);
             }
+        }
 
-            //HANDLE HALL ORDERS
-            for btn_id in 0..2{
-                let mut hall_order = order_table.get_hall_order(floor, btn_id);
-                let seen_by = hall_order.seen_by;
-                if self.is_all_acked(&seen_by){
-                    hall_order.update_state(OrderState::Confirmed);
+        // HANDLE HALL ORDERS
+        for button in [Button::HallUp, Button::HallDown] {
+            let seen_by = self.order_table.get_hall_order(floor, button as usize).get_seen_by();
+            if self.is_all_acked(&seen_by) {
+                self.order_table.get_hall_order_mut(floor, button as usize).set_state(OrderState::Confirmed);
                 }
             }
         }
@@ -134,8 +144,9 @@ impl WorldView {
             //pass itself as message to network thread?
             //Send action to fsm
             //Send action to lights
-
-    pub fn merge(&mut self, &incoming: WorldView){
+    }
+    pub fn merge(&mut self, incoming: &WorldView){
+        //Should be atomic?
         merge_hall_orders(self, incoming);
         merge_cab_orders(self, incoming);
         merge_peer_status(self, incoming);
@@ -150,14 +161,18 @@ fn merge_hall_orders(local: &mut WorldView, incoming: &WorldView){
         for button in [Button::HallUp, Button::HallDown]{
             let local_ct = local.counters.get_hall_order(floor, button);
             let incoming_ct = incoming.counters.get_hall_order(floor, button);
+            let local_order = local.order_table.get_hall_order_mut(floor, button as usize);
+
+            //Incoming world_view with more recent state
             if incoming_ct > local_ct {
-                let incoming_state = incoming.order_table.get_hall_state(floor, button);
-                local.order_table.update_hall(floor, button, incoming_state);
+                let incoming_order = incoming.order_table.get_hall_order(floor, button as usize);
+                *local_order = incoming_order;
                 local.counters.set_hall_order(floor, button, incoming_ct);
             }
+
             else if incoming_ct == local_ct {
-                let incoming_id = incoming.self_id as usize;
-                local.order_table.update_hall_seen_by(floor, button, incoming_id, true);
+                let incoming_id = incoming.self_id;
+                local_order.set_seen_by(incoming_id);
             }
         }
     }
@@ -165,32 +180,35 @@ fn merge_hall_orders(local: &mut WorldView, incoming: &WorldView){
 
 fn merge_cab_orders(local: &mut WorldView, incoming: &WorldView) {
     for floor in 0..N_FLOORS {
-        for node in 0..N_NODES {
-            let local_ct = local.counters.get_cab_order(floor, node);
-            let incoming_ct = incoming.counters.get_cab_order(floor, node);
+        for node_id in 0..N_NODES {
+            let local_ct = local.counters.get_cab_order(floor, node_id);
+            let incoming_ct = incoming.counters.get_cab_order(floor, node_id);
+            let local_order = local.order_table.get_cab_order_mut(floor, node_id);
+
             if incoming_ct > local_ct {
-                let incoming_state = incoming.order_table.get_cab_state(floor, node);
-                let incoming_id = incoming.self_id as usize;
-                local.order_table.update_cab(floor, node, incoming_state);
-                local.counters.set_cab_order(floor, incoming_id, incoming_ct);
+                let incoming_order = incoming.order_table.get_cab_order(floor, node_id);
+                *local_order = incoming_order;
+                local.counters.set_cab_order(floor, node_id, incoming_ct);
             }
             else if incoming_ct == local_ct {
-                let incoming_id = incoming.self_id as usize;
-                local.order_table.update_cab_seen_by(floor, incoming_id, true);
+                let incoming_id = incoming.self_id;
+                local_order.set_seen_by(incoming_id);
             }
         }
     }
 }
 
 fn merge_peer_status(local: &mut WorldView, incoming: &WorldView) {
+    let incoming_availability = incoming.get_peer_availability();
     for node in 0..N_NODES {
         let local_ct = local.counters.get_peer_status(node);
         let incoming_ct = incoming.counters.get_peer_status(node);
+
         if incoming_ct > local_ct {
-            let incoming_availability = incoming.get_peer_availability().is_available(node);
-            let incoming_id = incoming.self_id as usize;
-            local.set_peer_availability(node, incoming_availability);
-            local.counters.set_peer_status(incoming_id, incoming_ct);
+            let is_available: bool = incoming_availability.get(node);
+
+            local.peer_availability.set(node, is_available);
+            local.counters.set_peer_status(node, incoming_ct);
         }
     }
 }
@@ -200,10 +218,9 @@ fn merge_elevator(local: &mut WorldView, incoming: &WorldView) {
         let local_ct = local.counters.get_elevator(node);
         let incoming_ct = incoming.counters.get_elevator(node);
         if incoming_ct > local_ct {
-            let incoming_elevator = *incoming.get_elevator_map().get_elevator(node);
-            let incoming_id = incoming.self_id as usize;
-            local.update_elevator(node, incoming_elevator);
-            local.counters.set_elevator(incoming_id, incoming_ct);
-        }   
+            let incoming_elevator = *incoming.elevator_map.get(node);
+            local.elevator_map.set(node, incoming_elevator);
+            local.counters.set_elevator(node, incoming_ct);
+        }
     }
 }

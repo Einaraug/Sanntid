@@ -3,6 +3,7 @@ mod elev_algo;
 mod world_view;
 mod network;
 mod orders;
+mod counters;
 
 use elevio::elev as hw;
 use elevio::poll;
