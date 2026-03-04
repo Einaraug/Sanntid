@@ -138,6 +138,10 @@ fn merge_cab_orders(local: &mut WorldView, incoming: &WorldView) {
                 local.order_table.update_cab(floor, node, incoming_state);
                 local.counters.set_cab_order(floor, incoming_id, incoming_ct);
             }
+            else if incoming_ct == local_ct {
+                let incoming_id = incoming.self_id as usize;
+                local.order_table.update_cab_seen_by(floor, incoming_id, true);
+            }
         }
     }
 }
