@@ -47,7 +47,7 @@ pub struct WorldView {
     elevator_map: ElevatorMap,
     peer_availability: PeerAvailability,
     order_table: OrderTable,
-    counts: Counters,
+    counters: Counters,
 }
 impl WorldView {
     pub fn new(self_id: i32) -> Self {
@@ -56,7 +56,7 @@ impl WorldView {
             elevator_map: ElevatorMap::new(),
             peer_availability: PeerAvailability::new(),
             order_table: OrderTable::new(),
-            counts: Counters::new(),
+            counters: Counters::new(),
         }
     }
 
@@ -77,8 +77,8 @@ impl WorldView {
         &self.order_table
     }
 
-    pub fn get_counts(&self) -> &Counters {
-        &self.counts
+    pub fn get_counters(&self) -> &Counters {
+        &self.counters
     }
 
     // Setters
@@ -97,5 +97,73 @@ impl WorldView {
 
     pub fn update_cab_order(&mut self, floor: usize, node_id: usize, state: OrderState) {
         self.order_table.update_cab(floor, node_id, state);
+    }
+
+    pub fn merge(&mut self, &incoming: WorldView){
+        merge_hall_orders(self, incoming);
+        merge_cab_orders(self, incoming);
+        merge_peer_status(self, incoming);
+        merge_elevator(self, incoming);
+    }
+}
+
+
+//Helper functions for merging worldviews
+fn merge_hall_orders(local: &mut WorldView, incoming: &WorldView){
+    for floor in 0..N_FLOORS{
+        for button in [Button::HallUp, Button::HallDown]{
+            let local_ct = local.counters.get_hall_order(floor, button);
+            let incoming_ct = incoming.counters.get_hall_order(floor, button);
+            if incoming_ct > local_ct {
+                let incoming_state = incoming.order_table.get_hall_state(floor, button);
+                local.order_table.update_hall(floor, button, incoming_state);
+                local.counters.set_hall_order(floor, button, incoming_ct);
+            }
+            else if incoming_ct == local_ct {
+                let incoming_id = incoming.self_id as usize;
+                local.order_table.update_hall_seen_by(floor, button, incoming_id, true);
+            }
+        }
+    }
+}
+
+fn merge_cab_orders(local: &mut WorldView, incoming: &WorldView) {
+    for floor in 0..N_FLOORS {
+        for node in 0..N_NODES {
+            let local_ct = local.counters.get_cab_order(floor, node);
+            let incoming_ct = incoming.counters.get_cab_order(floor, node);
+            if incoming_ct > local_ct {
+                let incoming_state = incoming.order_table.get_cab_state(floor, node);
+                let incoming_id = incoming.self_id as usize;
+                local.order_table.update_cab(floor, node, incoming_state);
+                local.counters.set_cab_order(floor, incoming_id, incoming_ct);
+            }
+        }
+    }
+}
+
+fn merge_peer_status(local: &mut WorldView, incoming: &WorldView) {
+    for node in 0..N_NODES {
+        let local_ct = local.counters.get_peer_status(node);
+        let incoming_ct = incoming.counters.get_peer_status(node);
+        if incoming_ct > local_ct {
+            let incoming_availability = incoming.get_peer_availability().is_available(node);
+            let incoming_id = incoming.self_id as usize;
+            local.set_peer_availability(node, incoming_availability);
+            local.counters.set_peer_status(incoming_id, incoming_ct);
+        }
+    }
+}
+
+fn merge_elevator(local: &mut WorldView, incoming: &WorldView) {
+    for node in 0..N_NODES {
+        let local_ct = local.counters.get_elevator(node);
+        let incoming_ct = incoming.counters.get_elevator(node);
+        if incoming_ct > local_ct {
+            let incoming_elevator = *incoming.get_elevator_map().get_elevator(node);
+            let incoming_id = incoming.self_id as usize;
+            local.update_elevator(node, incoming_elevator);
+            local.counters.set_elevator(incoming_id, incoming_ct);
+        }   
     }
 }
