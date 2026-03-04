@@ -2,7 +2,7 @@ use crate::elev_algo::elevator::{Button, Elevator, N_FLOORS};
 use crate::orders::*;
 
 pub const N_NODES: usize = 3;
-type ElevId = u32;
+type ElevId = usize;
 
 #[derive(Clone)]
 pub struct ElevatorMap {
@@ -43,14 +43,14 @@ impl PeerAvailability {
 
 //TODO: Generalize names
 pub struct WorldView {
-    self_id: i32,
+    self_id: u32,
     elevator_map: ElevatorMap,
     peer_availability: PeerAvailability,
     order_table: OrderTable,
     counts: Counters,
 }
 impl WorldView {
-    pub fn new(self_id: i32) -> Self {
+    pub fn new(self_id: u32) -> Self {
         Self {
             self_id: self_id,
             elevator_map: ElevatorMap::new(),
@@ -61,7 +61,7 @@ impl WorldView {
     }
 
     // Getters :: Should the return type be references?
-    pub fn get_self_id(&self) -> i32 {
+    pub fn get_self_id(&self) -> u32 {
         self.self_id
     }
 
@@ -98,4 +98,14 @@ impl WorldView {
     pub fn update_cab_order(&mut self, floor: usize, node_id: usize, state: OrderState) {
         self.order_table.update_cab(floor, node_id, state);
     }
+
+    pub fn run_world_view(&mut self){
+        
+    }
+
 }
+
+
+
+
+

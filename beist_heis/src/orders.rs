@@ -1,8 +1,9 @@
 use crate::elev_algo::elevator::{Button, N_FLOORS};
 use crate::world_view::N_NODES;
+pub const UNASSIGNED_NODE: usize = 100;
 
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]    
 pub enum OrderState {
     None,
     Unconfirmed,
@@ -12,14 +13,14 @@ pub enum OrderState {
 #[derive(Debug, Clone, Copy)]
 pub struct HallOrder{
     pub state: OrderState,
-    pub id: i32,
+    pub id: usize,
 }
 
 impl HallOrder{
     pub fn new() -> Self {
         Self{
             state: OrderState::None,
-            id: 0, //0 means no node owns the order
+            id: UNASSIGNED_NODE,
         }
     }
 }
@@ -46,7 +47,7 @@ impl OrderTable {
         }
     }
 
-    pub fn update_hall_id(&mut self, floor: usize, button: Button, id: i32) {
+    pub fn update_hall_id(&mut self, floor: usize, button: Button, id: usize) {
         match button {
             Button::HallUp   => self.hall[floor][0].id = id,
             Button::HallDown => self.hall[floor][1].id = id,
@@ -54,7 +55,7 @@ impl OrderTable {
         }
     }
 
-    pub fn update_cab(&mut self, floor: usize, node_id: i32, state: OrderState) {
+    pub fn update_cab(&mut self, floor: usize, node_id: usize, state: OrderState) {
         self.cab[floor][node_id] = state;
     }
    
@@ -66,25 +67,26 @@ impl OrderTable {
         }
     }   
 
-    pub fn get_cab_state(&self, floor: usize, node_id: i32) -> OrderState {
+    pub fn get_cab_state(&self, floor: usize, node_id: usize) -> OrderState {
         self.cab[floor][node_id]
     }
 
     pub fn clear_hall(&mut self, floor: usize, button: Button) {
         self.update_hall_state(floor, button, OrderState::None);
-        self.update_hall_id(floor, button, 0);
+        self.update_hall_id(floor, button, UNASSIGNED_NODE);
     }
 
-    pub fn clear_cab(&mut self, floor: usize, node_id: i32) {
+    pub fn clear_cab(&mut self, floor: usize, node_id: usize) {
         self.update_cab(floor, node_id, OrderState::None);
     }
 
-    pub fn on_button_press(&mut self, floor: usize, button: Button, node_id: i32) {
+    pub fn on_button_press(&mut self, floor: usize, button: Button, node_id: usize) {
         match button {
             Button::HallUp | Button::HallDown => {
                 self.update_hall_state(floor, button, OrderState::Unconfirmed);
-                self.update_hall_id(floor, button, 0); //0 indicates unassigned order
+                self.update_hall_id(floor, button, UNASSIGNED_NODE); //Init as unassigned
             }
+
             Button::Cab => {
                 self.update_cab(floor, node_id, OrderState::Unconfirmed);
             }
