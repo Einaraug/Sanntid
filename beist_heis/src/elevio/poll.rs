@@ -3,21 +3,24 @@ use std::thread;
 use std::time;
 
 use super::elev;
+use crate::elev_algo::fsm::SensorEvent;
 
-#[derive(Debug)]
-pub struct CallButton {
+/// Button press event - sent to WorldView
+#[derive(Debug, Clone)]
+pub struct ButtonEvent {
     pub floor: u8,
-    pub call: u8,
+    pub button: u8,
 }
 
-pub fn call_buttons(elev: elev::Elevator, ch: cbc::Sender<CallButton>, period: time::Duration) {
+/// Polls buttons and sends to WorldView
+pub fn poll_buttons(elev: elev::Elevator, ch: cbc::Sender<ButtonEvent>, period: time::Duration) {
     let mut prev = vec![[false; 3]; elev.num_floors.into()];
     loop {
         for f in 0..elev.num_floors {
             for c in 0..3 {
                 let v = elev.call_button(f, c);
                 if v && prev[f as usize][c as usize] != v {
-                    ch.send(CallButton { floor: f, call: c }).unwrap();
+                    ch.send(ButtonEvent { floor: f, button: c }).unwrap();
                 }
                 prev[f as usize][c as usize] = v;
             }
@@ -26,39 +29,35 @@ pub fn call_buttons(elev: elev::Elevator, ch: cbc::Sender<CallButton>, period: t
     }
 }
 
-pub fn floor_sensor(elev: elev::Elevator, ch: cbc::Sender<u8>, period: time::Duration) {
-    let mut prev = u8::MAX;
+/// Polls floor sensor, obstruction, stop button - sends directly to FSM
+pub fn poll_sensors(elev: elev::Elevator, ch: cbc::Sender<SensorEvent>, period: time::Duration) {
+    let mut prev_floor = u8::MAX;
+    let mut prev_obstr = false;
+    let mut prev_stop = false;
+
     loop {
+        // Floor sensor
         if let Some(f) = elev.floor_sensor() {
-            if f != prev {
-                ch.send(f).unwrap();
-                prev = f;
+            if f != prev_floor {
+                ch.send(SensorEvent::FloorArrival(f)).unwrap();
+                prev_floor = f;
             }
         }
-        thread::sleep(period)
-    }
-}
 
-pub fn stop_button(elev: elev::Elevator, ch: cbc::Sender<bool>, period: time::Duration) {
-    let mut prev = false;
-    loop {
-        let v = elev.stop_button();
-        if prev != v {
-            ch.send(v).unwrap();
-            prev = v;
+        // Obstruction
+        let obstr = elev.obstruction();
+        if obstr != prev_obstr {
+            ch.send(SensorEvent::Obstruction(obstr)).unwrap();
+            prev_obstr = obstr;
         }
-        thread::sleep(period)
-    }
-}
 
-pub fn obstruction(elev: elev::Elevator, ch: cbc::Sender<bool>, period: time::Duration) {
-    let mut prev = false;
-    loop {
-        let v = elev.obstruction();
-        if prev != v {
-            ch.send(v).unwrap();
-            prev = v;
+        // Stop button
+        let stop = elev.stop_button();
+        if stop != prev_stop {
+            ch.send(SensorEvent::StopButton(stop)).unwrap();
+            prev_stop = stop;
         }
+
         thread::sleep(period)
     }
 }

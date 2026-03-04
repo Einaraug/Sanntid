@@ -1,11 +1,16 @@
 use crate::elev_algo::elevator::{Button, Elevator, N_FLOORS};
+use crate::elev_algo::fsm::ConfirmedOrder;
+use crate::elevio::poll::ButtonEvent;
 use crate::orders::*;
+use crossbeam_channel as cbc;
+use serde::{Serialize, Deserialize};
+use std::time::Duration;
 
 pub const N_NODES: usize = 3;
 type ElevId = u32;
 
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ElevatorMap {
     elevator: [Elevator; N_NODES],
 }
@@ -23,7 +28,7 @@ impl ElevatorMap {
     }
 }
 
-#[derive(Clone)]  
+#[derive(Clone, Serialize, Deserialize)]  
 pub struct PeerAvailability{
     peer_availability: [bool; N_NODES],
 }
@@ -41,6 +46,7 @@ impl PeerAvailability {
     }
 }
 
+#[derive(Clone, Serialize, Deserialize)]
 pub struct WorldView {
     self_id: i32,
     elevator_map: ElevatorMap,
@@ -97,6 +103,57 @@ impl WorldView {
     pub fn update_cab_order(&mut self, floor: usize, node_id: i32, state: OrderState) {
         self.order_table.update_cab(floor, node_id, state);
     }
+
+    pub fn run(
+        mut self,
+        from_buttons: cbc::Receiver<ButtonEvent>,
+        from_fsm: cbc::Receiver<Elevator>,
+        from_network: cbc::Receiver<WorldView>,
+        to_fsm: cbc::Sender<ConfirmedOrder>,
+        to_network: cbc::Sender<WorldView>,
+    ) {
+        const BROADCAST_INTERVAL: Duration = Duration::from_millis(100);
+
+        loop {
+            cbc::select! {
+                recv(from_buttons) -> msg => {
+                    let Ok(btn) = msg else { break };
+                    self.handle_button_press(btn, &to_fsm);
+                },
+                recv(from_fsm) -> msg => {
+                    let Ok(elev) = msg else { break };
+                    self.update_elevator(self.self_id as usize, elev);
+                },
+                recv(from_network) -> msg => {
+                    let Ok(peer_wv) = msg else { break };
+                    if peer_wv.self_id != self.self_id {
+                        self.merge_peer(peer_wv);
+                    }
+                },
+                default(BROADCAST_INTERVAL) => {
+                    // Periodic broadcast
+                }
+            }
+
+            // Broadcast to network
+            let _ = to_network.send(self.clone());
+        }
+    }
+
+    fn handle_button_press(&mut self, btn: ButtonEvent, to_fsm: &cbc::Sender<ConfirmedOrder>) {
+        let button = Button::from_index(btn.button as usize).unwrap();
+
+        // For now: send directly to FSM (merging/assigner TODO)
+        // In full implementation: add to order table, run assigner, then send if assigned to us
+        let _ = to_fsm.send(ConfirmedOrder {
+            floor: btn.floor as usize,
+            button,
+        });
+    }
+
+    fn merge_peer(&mut self, _peer: WorldView) {
+        // TODO: compare counters, merge state
+    }
 }
 
 
@@ -104,7 +161,7 @@ impl WorldView {
 
 
 //Move this to its own module?
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Counters{
     ct_hall_order:  [[u64; 2]; N_FLOORS],
     ct_cab_order:   [[u64; N_NODES]; N_FLOORS],

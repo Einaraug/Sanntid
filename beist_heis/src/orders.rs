@@ -1,15 +1,15 @@
 use crate::elev_algo::elevator::{Button, N_FLOORS};
 use crate::world_view::N_NODES;
+use serde::{Serialize, Deserialize};
 
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OrderState {
     None,
     Unconfirmed,
     Confirmed,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HallOrder{
     pub state: OrderState,
     pub id: i32,
@@ -24,7 +24,7 @@ impl HallOrder{
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrderTable {
     pub hall: [[HallOrder; 2]; N_FLOORS],
     pub cab:  [[OrderState; N_NODES]; N_FLOORS],

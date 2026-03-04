@@ -8,106 +8,90 @@ mod orders;
 mod assigner;
 
 use elevio::elev as hw;
-use elevio::poll;
+use elevio::poll::{self, ButtonEvent};
 use elev_algo::elevator::Elevator;
-use elev_algo::timer::Timer;
+use elev_algo::fsm::{SensorEvent, ConfirmedOrder};
+use world_view::WorldView;
 use crossbeam_channel as cbc;
 use std::thread;
 use std::time::Duration;
 
-fn test_assigner() {
-    use world_view::WorldView;
-    use elev_algo::elevator::Button;
-    use orders::OrderState;
-    use assigner::save_assigner_input;
-
-    let mut wv = WorldView::new(1);
-    wv.set_peer_availability(1, true);
-    wv.set_peer_availability(2, true);
-    wv.update_order_table(1, Button::HallUp, 1, OrderState::Confirmed);
-    wv.update_order_table(3, Button::HallDown, 2, OrderState::Confirmed);
-
-    save_assigner_input(&wv, "assigner_input.json").unwrap();
-    println!("saved! check assigner_input.json");
-}
+const WV_PORT: u16 = 20100;
+const POLL_PERIOD: Duration = Duration::from_millis(25);
 
 fn main() {
-    test_assigner();
-    return; 
+    let self_id: i32 = std::env::args()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
 
+    // Hardware init
     let hw_elev = hw::Elevator::init("localhost:15657", 4).unwrap();
-    let mut elev: Elevator = Elevator::new();
-    let mut timer = Timer::new();
 
-    // Spawn poll threads
-    let (floor_tx, floor_rx) = cbc::unbounded();
-    let (btn_tx, btn_rx) = cbc::unbounded();
+    // ═══════════════════════════════════════════════════════════════
+    // Channels
+    // ═══════════════════════════════════════════════════════════════
 
+    // hw_poll_buttons → worldview
+    let (btn_tx, btn_rx) = cbc::unbounded::<ButtonEvent>();
+
+    // hw_poll_sensors → fsm
+    let (sensor_tx, sensor_rx) = cbc::unbounded::<SensorEvent>();
+
+    // worldview → fsm (confirmed orders)
+    let (order_tx, order_rx) = cbc::unbounded::<ConfirmedOrder>();
+
+    // fsm → worldview (elevator state)
+    let (state_tx, state_rx) = cbc::unbounded::<Elevator>();
+
+    // worldview → udp_tx
+    let (to_net_tx, to_net_rx) = cbc::unbounded::<WorldView>();
+
+    // udp_rx → worldview
+    let (from_net_tx, from_net_rx) = cbc::unbounded::<WorldView>();
+
+    // ═══════════════════════════════════════════════════════════════
+    // Thread 1: hw_poll_buttons → WorldView
+    // ═══════════════════════════════════════════════════════════════
+    let hw1 = hw_elev.clone();
+    thread::spawn(move || poll::poll_buttons(hw1, btn_tx, POLL_PERIOD));
+
+    // ═══════════════════════════════════════════════════════════════
+    // Thread 2: hw_poll_sensors → FSM
+    // ═══════════════════════════════════════════════════════════════
     let hw2 = hw_elev.clone();
-    thread::spawn(move || poll::floor_sensor(hw2, floor_tx, Duration::from_millis(25)));
-    let hw3 = hw_elev.clone();
-    thread::spawn(move || poll::call_buttons(hw3, btn_tx, Duration::from_millis(25)));
+    thread::spawn(move || poll::poll_sensors(hw2, sensor_tx, POLL_PERIOD));
 
-    // Init: go down if between floors
-    if hw_elev.floor_sensor().is_none() {
-        let (new_elev, output) = elev.on_init_between_floors();
-        elev = new_elev;
-        apply_output(&hw_elev, &output);
-    }
+    // ═══════════════════════════════════════════════════════════════
+    // Thread 3: WorldView
+    // ═══════════════════════════════════════════════════════════════
+    let wv = WorldView::new(self_id);
+    thread::spawn(move || wv.run(btn_rx, state_rx, from_net_rx, order_tx, to_net_tx));
 
-    // Main event loop
+    // ═══════════════════════════════════════════════════════════════
+    // Thread 4: FSM
+    // ═══════════════════════════════════════════════════════════════
+    let fsm = Elevator::new();
+    thread::spawn(move || fsm.run(hw_elev, sensor_rx, order_rx, state_tx));
+
+    // ═══════════════════════════════════════════════════════════════
+    // Thread 5: UDP TX
+    // ═══════════════════════════════════════════════════════════════
+    thread::spawn(move || {
+        network::bcast::udp_send(WV_PORT, to_net_rx).unwrap();
+    });
+
+    // ═══════════════════════════════════════════════════════════════
+    // Thread 6: UDP RX
+    // ═══════════════════════════════════════════════════════════════
+    thread::spawn(move || {
+        network::bcast::udp_receive(WV_PORT, from_net_tx).unwrap();
+    });
+
+    // ═══════════════════════════════════════════════════════════════
+    // Main thread: keep alive
+    // ═══════════════════════════════════════════════════════════════
     loop {
-        cbc::select! {
-            recv(floor_rx) -> floor => {
-                let floor = floor.unwrap();
-                let (new_elev, output) = elev.on_floor_arrival(floor as i32);
-                elev = new_elev;
-                apply_output(&hw_elev, &output);
-                if output.start_door_timer {
-                    timer.start(elev.door_open_duration_s);
-                }
-            }
-            recv(btn_rx) -> btn => {
-                let btn = btn.unwrap();
-                let button = match btn.call {
-                    0 => elev_algo::elevator::Button::HallUp,
-                    1 => elev_algo::elevator::Button::HallDown,
-                    _ => elev_algo::elevator::Button::Cab,
-                };
-                let (new_elev, output) = elev.on_request_button_press(btn.floor as usize, button);
-                elev = new_elev;
-                apply_output(&hw_elev, &output);
-            }
-            default(Duration::from_millis(25)) => {
-                if timer.timed_out() {
-                    timer.stop();
-                    let (new_elev, output) = elev.on_door_timeout();
-                    elev = new_elev;
-                    apply_output(&hw_elev, &output);
-                }
-            }
-        }
-    }
-}
-
-fn apply_output(hw: &hw::Elevator, output: &elev_algo::fsm::FsmOutput) {
-    if let Some(dirn) = output.motor_direction {
-        hw.motor_direction(match dirn {
-            elev_algo::elevator::Dirn::Up   => hw::DIRN_UP,
-            elev_algo::elevator::Dirn::Down => hw::DIRN_DOWN,
-            elev_algo::elevator::Dirn::Stop => hw::DIRN_STOP,
-        });
-    }
-    if let Some(on) = output.door_light {
-        hw.door_light(on);
-    }
-    if let Some(floor) = output.floor_indicator {
-        hw.floor_indicator(floor as u8);
-    }
-    for (floor, btn) in &output.clear_lights {
-        hw.call_button_light(*floor as u8, btn.to_index() as u8, false);
-    }
-    for (floor, btn) in &output.set_lights {
-        hw.call_button_light(*floor as u8, btn.to_index() as u8, true);
+        thread::sleep(Duration::from_secs(1));
     }
 }

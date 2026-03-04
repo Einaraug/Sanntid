@@ -1,5 +1,8 @@
 use crate::elev_algo::elevator::*;
-//TODO: elevator.requests have been removed.
+use crate::elevio::elev as hw;
+use crossbeam_channel as cbc;
+use std::time::{Duration, Instant};
+
 #[derive(Debug, Clone, Default)]
 pub struct FsmOutput {
     pub motor_direction: Option<Dirn>,
@@ -10,13 +13,120 @@ pub struct FsmOutput {
     pub set_lights: Vec<(usize, Button)>,
 }
 
+/// Sensor events: floor/obstruction/stop - fast path directly to FSM
+pub enum SensorEvent {
+    FloorArrival(u8),
+    Obstruction(bool),
+    StopButton(bool),
+}
+
+/// Orders confirmed by WorldView after merging/assignment
+pub struct ConfirmedOrder {
+    pub floor: usize,
+    pub button: Button,
+}
+
 impl FsmOutput {
     pub fn new() -> Self {
         Self::default()
     }
 }
 
+
 impl Elevator {
+    pub fn run(
+        mut self,
+        hw: hw::Elevator,
+        sensors: cbc::Receiver<SensorEvent>,
+        orders: cbc::Receiver<ConfirmedOrder>,
+        to_wv: cbc::Sender<Elevator>,
+    ) {
+        let door_duration = Duration::from_secs_f64(self.door_open_duration_s);
+        let mut timer: Option<Instant> = None;
+
+        // Init: go down if between floors
+        if hw.floor_sensor().is_none() {
+            let (new_self, output) = self.on_init_between_floors();
+            self = new_self;
+            self.apply_output(&hw, &output);
+        }
+
+        loop {
+            let timeout = timer
+                .map(|t| t.saturating_duration_since(Instant::now()))
+                .unwrap_or(Duration::from_secs(86400));
+
+            cbc::select! {
+                recv(sensors) -> msg => {
+                    let Ok(event) = msg else { break };
+                    let output = match event {
+                        SensorEvent::FloorArrival(floor) => {
+                            let (new_self, output) = self.on_floor_arrival(floor as i32);
+                            self = new_self;
+                            output
+                        }
+                        SensorEvent::Obstruction(_on) => {
+                            // TODO: handle obstruction
+                            FsmOutput::new()
+                        }
+                        SensorEvent::StopButton(_on) => {
+                            // TODO: handle stop button
+                            FsmOutput::new()
+                        }
+                    };
+                    self.apply_output(&hw, &output);
+                    if output.start_door_timer {
+                        timer = Some(Instant::now() + door_duration);
+                    }
+                },
+                recv(orders) -> msg => {
+                    let Ok(order) = msg else { break };
+                    let (new_self, output) = self.on_request_button_press(order.floor, order.button);
+                    self = new_self;
+                    self.apply_output(&hw, &output);
+                    if output.start_door_timer {
+                        timer = Some(Instant::now() + door_duration);
+                    }
+                },
+                default(timeout) => {
+                    if timer.is_some() {
+                        timer = None;
+                        let (new_self, output) = self.on_door_timeout();
+                        self = new_self;
+                        self.apply_output(&hw, &output);
+                        if output.start_door_timer {
+                            timer = Some(Instant::now() + door_duration);
+                        }
+                    }
+                }
+            }
+
+            // Report state to WorldView
+            let _ = to_wv.send(self.clone());
+        }
+    }
+
+    fn apply_output(&self, hw: &hw::Elevator, output: &FsmOutput) {
+        if let Some(dir) = output.motor_direction {
+            hw.motor_direction(match dir {
+                Dirn::Up   => hw::DIRN_UP,
+                Dirn::Down => hw::DIRN_DOWN,
+                Dirn::Stop => hw::DIRN_STOP,
+            });
+        }
+        if let Some(on) = output.door_light {
+            hw.door_light(on);
+        }
+        if let Some(floor) = output.floor_indicator {
+            hw.floor_indicator(floor as u8);
+        }
+        for (floor, btn) in &output.clear_lights {
+            hw.call_button_light(*floor as u8, btn.to_index() as u8, false);
+        }
+        for (floor, btn) in &output.set_lights {
+            hw.call_button_light(*floor as u8, btn.to_index() as u8, true);
+        }
+    }
     pub fn on_init_between_floors(&self) -> (Self, FsmOutput) {
         let mut e = self.clone();
         let mut output = FsmOutput::new();
