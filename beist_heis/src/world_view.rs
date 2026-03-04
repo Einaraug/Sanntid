@@ -1,4 +1,4 @@
-use crate::elev_algo::elevator::{Button, Elevator, N_FLOORS};
+use crate::elev_algo::elevator::{Button, Elevator, N_BUTTONS, N_FLOORS};
 use crate::orders::*;
 
 pub const N_NODES: usize = 3;
@@ -32,11 +32,14 @@ impl PeerAvailability {
             peer_availability: [false; N_NODES], //Initially, all peers are unavailable until they announce themselves. WorldView owns the availability, so we can initialize it here.
         }
     }
-    pub fn set_availability(&mut self, node_id: usize, available: bool) {
+    pub fn get_availability(&self, node_id: usize) -> bool {
+        self.peer_availability[node_id]
+    }
+    pub fn update_availability(&mut self, node_id: usize, available: bool) {
         self.peer_availability[node_id] = available;
     }
-    pub fn is_available(&self, node_id: usize) -> bool {
-        self.peer_availability[node_id]
+    pub fn iter(&self) -> impl Iterator<Item = (usize, bool)> {
+        self.peer_availability.iter().copied().enumerate()
     }
 }
 
@@ -47,7 +50,7 @@ pub struct WorldView {
     elevator_map: ElevatorMap,
     peer_availability: PeerAvailability,
     order_table: OrderTable,
-    counts: Counters,
+    counters: Counters,
 }
 impl WorldView {
     pub fn new(self_id: u32) -> Self {
@@ -56,7 +59,7 @@ impl WorldView {
             elevator_map: ElevatorMap::new(),
             peer_availability: PeerAvailability::new(),
             order_table: OrderTable::new(),
-            counts: Counters::new(),
+            counters: Counters::new(),
         }
     }
 
@@ -78,32 +81,62 @@ impl WorldView {
     }
 
     pub fn get_counts(&self) -> &Counters {
-        &self.counts
+        &self.counters
     }
 
-    // Setters
-    pub fn update_elevator(&mut self, node_id: usize, elevator: Elevator) {
-        self.elevator_map.update_elevator(node_id, elevator);
+    pub fn is_all_acked(&self, seen_by: &[bool; N_NODES]) -> bool {
+        for (node_id, available) in self.get_peer_availability().iter() {
+            if available && !seen_by[node_id] {
+                return false;
+            }
+        }
+        true
     }
 
-    pub fn set_peer_availability(&mut self, node_id: usize, available: bool) {
-        self.peer_availability.set_availability(node_id, available);
-    }
+    pub fn modify_order_states(&mut self){
+        let order_table = self.get_order_table();        
+        for floor in 0..N_FLOORS{
 
-    pub fn update_order_table(&mut self, floor: usize, button: Button, node_id: usize, state: OrderState) {
-       self.order_table.update_hall_state(floor, button, state);
-       self.order_table.update_hall_id(floor, button, node_id);
-    }
+            //HANDLE CAB ORDERS
+            for node_id in 0..N_NODES{
+                let mut cab_order = order_table.get_cab_order(floor, node_id);
+                let seen_by = cab_order.seen_by;
+                if self.is_all_acked(&seen_by){
+                    cab_order.update_state(OrderState::Confirmed);
+                }
+            }
 
-    pub fn update_cab_order(&mut self, floor: usize, node_id: usize, state: OrderState) {
-        self.order_table.update_cab(floor, node_id, state);
+            //HANDLE HALL ORDERS
+            for btn_id in 0..2{
+                let mut hall_order = order_table.get_hall_order(floor, btn_id);
+                let seen_by = hall_order.seen_by;
+                if self.is_all_acked(&seen_by){
+                    hall_order.update_state(OrderState::Confirmed);
+                }
+            }
+        }
     }
+    
 
     pub fn run_world_view(&mut self){
-        
-    }
+        //Init func should be called outside.
 
+        //while(1){}
+            //Recieve incoming worldview
+            //Update own world_view using merge_worldviews func()
+
+            //Check for "order to be handled" -->
+            //Poll buttons  + increment state counters
+            //If new order - handle using orders.rs
+            //If stop / obstruction. Update state and pass to fsm to handle states
+            //Increment counters
+            
+            //pass itself as message to network thread?
+            //Send action to fsm
+            //Send action to lights
+    }
 }
+
 
 
 
