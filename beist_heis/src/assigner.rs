@@ -9,7 +9,7 @@ use crate::orders::OrderState;
 
 
 #[derive(Serialize)]
-struct AssignerInput {
+struct AssignerInput { // Replace with world_view::ElevatorMap
     #[serde(rename = "hallRequests")]
     hall_requests: [[bool; 2]; N_FLOORS],
     states: HashMap<String, ElevatorStateDto>,
@@ -25,7 +25,7 @@ struct ElevatorStateDto {
 }
 
 
-pub type AssignerOutput = HashMap<String, [[bool; 2]; N_FLOORS]>;
+pub type AssignerOutput = HashMap<String, [[bool; 3]; N_FLOORS]>;
 
 fn build_input(wv: &WorldView) -> AssignerInput {
     let ot = wv.get_order_table();
@@ -33,7 +33,7 @@ fn build_input(wv: &WorldView) -> AssignerInput {
         ot.hall[floor][0].state == OrderState::Confirmed,
         ot.hall[floor][1].state == OrderState::Confirmed,
     ]);
-    let states = (0..N_NODES)
+    let states = (0..(N_NODES))
         .filter(|&id| wv.get_peer_availability().is_available(id))
         .map(|id| {
             let e = wv.get_elevator_map().get_elevator(id);
@@ -81,4 +81,3 @@ pub fn save_assigner_input(wv: &WorldView, path: &str) -> Result<(), Box<dyn std
 }
 
 
-/// Run hall_request_assigner with hall_request_assigner --input "$(cat assigner_input.json)"
