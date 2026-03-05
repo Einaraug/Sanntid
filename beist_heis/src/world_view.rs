@@ -1,3 +1,4 @@
+#![allow(dead_code, non_snake_case)]
 use crate::elev_algo::elevator::{Button, Elevator, N_BUTTONS, N_FLOORS};
 use crate::orders::*;
 use crate::counters::*;
@@ -223,4 +224,43 @@ fn merge_elevator(local: &mut WorldView, incoming: &WorldView) {
             local.counters.set_elevator(node, incoming_ct);
         }
     }
+}
+
+#[cfg(test)]
+mod tests{
+    use super::*;
+    use crate::elev_algo::elevator::Button;
+
+    fn gen_wv(id: usize) ->  WorldView{
+        let mut wv = WorldView::new(id);
+        for i in 0..N_NODES{
+            wv.peer_availability.set(i, true);
+        }
+        wv
+    }
+
+    #[test]
+    fn try_to_add_order(){
+        let mut wv = gen_wv(0);
+        wv.on_button_press(1, Button::HallUp);
+        wv.on_button_press(2, Button::HallDown);
+        wv.on_button_press(2, Button::Cab);
+
+        let order_table = wv.get_order_table();
+        let hallOrder_1_up = order_table.get_hall_order(1, Button::HallUp as usize);
+        let hallOrder_2_down = order_table.get_hall_order(2, Button::HallDown as usize);
+
+        let cabOrder_2_correct = order_table.get_cab_order(2, 0);
+        let cabOrder_2_incorrect= order_table.get_cab_order(2, 1);
+
+        assert_eq!(hallOrder_1_up.get_state(), OrderState::Unconfirmed);
+        assert_eq!(hallOrder_1_up.get_node_id(), UNASSIGNED_NODE);
+
+        assert_eq!(hallOrder_2_down.get_state(), OrderState::Unconfirmed);
+        assert_eq!(hallOrder_2_down.get_node_id(), UNASSIGNED_NODE);
+        
+        assert_eq!(cabOrder_2_correct.get_state(), OrderState::Unconfirmed);
+        assert_eq!(cabOrder_2_incorrect.get_state(), OrderState::None);
+    }
+
 }

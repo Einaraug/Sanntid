@@ -99,10 +99,10 @@ impl OrderTable {
 
     // ---- GETTERS ----
     pub fn get_hall_order(&self, floor: usize, btn_id: usize) -> HallOrder {
-        self.hall[floor][btn_idx]  // copy, for reading
+        self.hall[floor][btn_id]  // copy, for reading
     }
     pub fn get_hall_order_mut(&mut self, floor: usize, btn_id: usize) -> &mut HallOrder {
-        &mut self.hall[floor][btn_idx]  // mutable ref, for mutating
+        &mut self.hall[floor][btn_id]  // mutable ref, for mutating
     }
 
     pub fn get_cab_order(&self, floor: usize, node_id: usize) -> CabOrder {
