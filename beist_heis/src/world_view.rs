@@ -215,16 +215,18 @@ impl WorldView {
             cbc::select! {
                 recv(from_buttons) -> msg => {
                     let Ok(btn) = msg else { break };
-                    self.handle_button_press(btn, &to_fsm);
+                    if let Some(button) = Button::from_index(btn.button as usize) {
+                        self.on_button_press(btn.floor as usize, button);
+                    }
                 },
                 recv(from_fsm) -> msg => {
                     let Ok(elev) = msg else { break };
-                    self.update_elevator(self.self_id as usize, elev);
+                    self.set_elevator(self.self_id, elev);
                 },
                 recv(from_network) -> msg => {
                     let Ok(peer_wv) = msg else { break };
                     if peer_wv.self_id != self.self_id {
-                        self.merge_peer(peer_wv);
+                        self.merge(&peer_wv);
                     }
                 },
                 default(BROADCAST_INTERVAL) => {
