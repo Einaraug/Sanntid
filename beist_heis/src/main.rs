@@ -1,5 +1,4 @@
 #![allow(dead_code, unused_imports)]
-
 mod elevio;
 mod elev_algo;
 mod world_view;
@@ -17,6 +16,8 @@ use crossbeam_channel as cbc;
 use std::thread;
 use std::time::Duration;
 
+use crate::elev_algo::elevator::N_FLOORS;
+
 const WV_PORT: u16 = 20100;
 const POLL_PERIOD: Duration = Duration::from_millis(25);
 
@@ -27,7 +28,7 @@ fn main() {
         .unwrap_or(0);
 
     // Hardware init
-    let hw_elev = hw::Elevator::init("localhost:15657", 4).unwrap();
+    let hw_elev = hw::Elevator::init("localhost:15657", N_FLOORS as u8).unwrap();
 
     // ═══════════════════════════════════════════════════════════════
     // Channels

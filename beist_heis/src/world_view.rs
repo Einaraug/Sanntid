@@ -12,7 +12,7 @@ use crate::counters::*;
 
 pub const N_NODES: usize = 3;
 type ElevId = usize;
-    //TODO: REMOVE
+
 
 #[derive(Clone, Serialize, Deserialize)]  
 pub struct ElevatorMap {
@@ -152,7 +152,8 @@ impl WorldView {
         }
         true
     }
-    pub fn modify_order_states(&mut self) {
+
+    pub fn confirm_and_assign_orders(&mut self) {
         for floor in 0..N_FLOORS {
         // HANDLE CAB ORDERS
         for node_id in 0..N_NODES {

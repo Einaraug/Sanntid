@@ -72,8 +72,6 @@ pub fn assign_hall_requests(
     Ok(serde_json::from_slice(&output.stdout)?)
 }
 
-
-
 pub fn save_assigner_input(wv: &WorldView, path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let input = build_input(wv);
     fs::write(path, serde_json::to_string_pretty(&input)?)?;

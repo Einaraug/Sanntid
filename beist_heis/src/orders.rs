@@ -15,7 +15,7 @@ pub enum OrderState {
 pub struct HallOrder{
     pub state: OrderState,
     pub node_id: usize,
-    pub seen_by: [bool; N_NODES],
+    pub seen_by: [bool; N_NODES],git 
 }
 
 impl HallOrder {
