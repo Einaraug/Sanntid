@@ -6,6 +6,7 @@ mod world_view;
 mod network;
 mod orders;
 mod assigner;
+mod counters;
 
 use elevio::elev as hw;
 use elevio::poll::{self, ButtonEvent};
@@ -20,7 +21,7 @@ const WV_PORT: u16 = 20100;
 const POLL_PERIOD: Duration = Duration::from_millis(25);
 
 fn main() {
-    let self_id: i32 = std::env::args()
+    let self_id: usize = std::env::args()
         .nth(1)
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);

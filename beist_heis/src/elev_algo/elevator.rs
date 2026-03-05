@@ -1,6 +1,7 @@
 use serde::{Serialize, Deserialize};
 
 pub const N_FLOORS: usize = 4;
+
 pub const N_BUTTONS: usize = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
