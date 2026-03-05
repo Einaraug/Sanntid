@@ -1,3 +1,4 @@
+#![allow(dead_code, non_snake_case)]
 use crossbeam_channel as cbc;
 use log::warn;
 use serde::Deserialize;

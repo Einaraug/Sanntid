@@ -1,5 +1,4 @@
 use crate::elev_algo::elevator::*;
-//TODO: elevator.requests have been removed.
 #[derive(Debug, Clone, Default)]
 pub struct FsmOutput {
     pub motor_direction: Option<Dirn>,

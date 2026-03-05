@@ -1,3 +1,4 @@
+#![allow(dead_code, non_snake_case)]
 use crate::elev_algo::elevator::{Button, N_FLOORS};
 use crate::world_view::N_NODES;
 

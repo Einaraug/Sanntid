@@ -1,3 +1,4 @@
+#![allow(dead_code, non_snake_case)]
 use crate::elev_algo::elevator::{N_FLOORS};
 use crate::world_view::N_NODES;
 pub const UNASSIGNED_NODE: usize = 100;
@@ -34,7 +35,6 @@ impl HallOrder {
     pub fn get_node_id(&self) -> usize {
         self.node_id
     }
-    
     pub fn set_node_id(&mut self, node_id: usize) {
         self.node_id = node_id;
     }

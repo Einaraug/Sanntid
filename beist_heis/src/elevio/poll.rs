@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crossbeam_channel as cbc;
 use std::thread;
 use std::time;
