@@ -21,6 +21,7 @@ impl ElevatorMap {
     }
     pub fn set(&mut self, node_id: usize, elevator: Elevator) {
         self.elevator[node_id] = elevator;
+        
     }
 }
 
@@ -84,17 +85,49 @@ impl WorldView {
         &self.counters
     }
 
+
+    // Setters:
+    pub fn set_elevator(&mut self, node_id: usize, elevator: Elevator) {
+        self.elevator_map.set(node_id, elevator);
+        self.counters.inc_elevator(node_id);   
+    }
+
+    pub fn set_peer_availability(&mut self, node_id: usize, available: bool) {
+        self.peer_availability.set(node_id, available);
+        self.counters.inc_peer_availability(node_id);
+    }
+
+    pub fn set_hall_order_state(&mut self, floor: usize, button: Button, state: OrderState) {
+        let hall_order = self.order_table.get_hall_order_mut(floor, button as usize);
+
+        hall_order.set_state(state);
+        self.counters.inc_hall_order(floor, button);
+    }
+
+    pub fn set_hall_order_node_id(&mut self, floor: usize, button: Button, node_id: usize) {
+        let hall_order = self.order_table.get_hall_order_mut(floor, button as usize);
+
+        hall_order.set_node_id(node_id);
+        self.counters.inc_hall_order(floor, button);
+        }
+
+    pub fn set_cab_order_state(&mut self, floor: usize, node_id: usize, state: OrderState) {
+        let cab_order = self.order_table.get_cab_order_mut(floor, node_id);
+
+        cab_order.set_state(state);
+        self.counters.inc_cab_order(floor, node_id);
+    }
+
+
     // --BUTTON PRESS HANDLER --
     pub fn on_button_press(&mut self, floor: usize, button: Button) {
         match button {
             Button::HallUp | Button::HallDown => {
-                let order = self.order_table.get_hall_order_mut(floor, button as usize);
-                order.set_state(OrderState::Unconfirmed);
-                order.set_node_id(UNASSIGNED_NODE);
+                self.set_hall_order_state(floor, button, OrderState::Unconfirmed);
+                self.set_hall_order_node_id(floor, button, UNASSIGNED_NODE);
             }
             Button::Cab => {
-                let order = self.order_table.get_cab_order_mut(floor, self.self_id);
-                order.set_state(OrderState::Unconfirmed);
+                self.set_cab_order_state(floor, self.self_id, OrderState::Unconfirmed);
             }
         }
     }
@@ -111,17 +144,19 @@ impl WorldView {
         for floor in 0..N_FLOORS {
         // HANDLE CAB ORDERS
         for node_id in 0..N_NODES {
-            let seen_by = self.order_table.get_cab_order(floor, node_id).get_seen_by();
+            let cab_order = self.order_table.get_cab_order(floor, node_id);
+            let seen_by = cab_order.get_seen_by();
             if self.is_all_acked(&seen_by) {
-                self.order_table.get_cab_order_mut(floor, node_id).set_state(OrderState::Confirmed);
+                self.set_cab_order_state(floor, node_id,OrderState::Confirmed);
             }
         }
 
         // HANDLE HALL ORDERS
         for button in [Button::HallUp, Button::HallDown] {
-            let seen_by = self.order_table.get_hall_order(floor, button as usize).get_seen_by();
+            let hall_order = self.order_table.get_hall_order_mut(floor, button as usize);
+            let seen_by = hall_order.get_seen_by();
             if self.is_all_acked(&seen_by) {
-                self.order_table.get_hall_order_mut(floor, button as usize).set_state(OrderState::Confirmed);
+                self.set_hall_order_state(floor, button, OrderState::Confirmed);
                 }
             }
         }
@@ -201,14 +236,14 @@ fn merge_cab_orders(local: &mut WorldView, incoming: &WorldView) {
 fn merge_peer_status(local: &mut WorldView, incoming: &WorldView) {
     let incoming_availability = incoming.get_peer_availability();
     for node in 0..N_NODES {
-        let local_ct = local.counters.get_peer_status(node);
-        let incoming_ct = incoming.counters.get_peer_status(node);
+        let local_ct = local.counters.get_peer_availability(node);
+        let incoming_ct = incoming.counters.get_peer_availability(node);
 
         if incoming_ct > local_ct {
             let is_available: bool = incoming_availability.get(node);
 
             local.peer_availability.set(node, is_available);
-            local.counters.set_peer_status(node, incoming_ct);
+            local.counters.set_peer_availability(node, incoming_ct);
         }
     }
 }

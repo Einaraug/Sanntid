@@ -5,7 +5,7 @@ use crate::world_view::N_NODES;
 pub struct Counters{
     hall_order: [[u64; 2]; N_FLOORS],
     cab_order: [[u64; N_NODES]; N_FLOORS],
-    peer_status: [u64; N_NODES],
+    peer_availability: [u64; N_NODES],
     elevator: [u64; N_NODES],
 
 }
@@ -14,7 +14,7 @@ impl Counters{
         Self {
             hall_order: [[0; 2]; N_FLOORS],
             cab_order: [[0; N_NODES]; N_FLOORS],
-            peer_status: [0; N_NODES],
+            peer_availability: [0; N_NODES],
             elevator: [0; N_NODES],
 
         }
@@ -29,7 +29,7 @@ impl Counters{
         }
     }
     pub fn inc_cab_order(&mut self, floor: usize, node_id: usize) { self.cab_order[floor][node_id] += 1; }
-    pub fn inc_peer_status(&mut self, node_id: usize) { self.peer_status[node_id] += 1; }
+    pub fn inc_peer_availability(&mut self, node_id: usize) { self.peer_availability[node_id] += 1; }
     pub fn inc_elevator(&mut self, node_id: usize) { self.elevator[node_id] += 1; }
    
     // ── Getters ──────────────────────────────────────────────────────────────
@@ -41,7 +41,7 @@ impl Counters{
         }
     }
     pub fn get_cab_order(&self, floor: usize, node_id: usize) -> u64 { self.cab_order[floor][node_id]}
-    pub fn get_peer_status(&self, node_id: usize) -> u64 { self.peer_status[node_id]}
+    pub fn get_peer_availability(&self, node_id: usize) -> u64 { self.peer_availability[node_id]}
     pub fn get_elevator(&self, node_id: usize) -> u64 { self.elevator[node_id]}
    
     // ── Setters ──────────────────────────────────────────────────────────────
@@ -53,7 +53,7 @@ impl Counters{
         }
     }
     pub fn set_cab_order(&mut self, floor: usize, node_id: usize, value: u64) { self.cab_order[floor][node_id] = value; }
-    pub fn set_peer_status(&mut self, node_id: usize, value: u64) { self.peer_status[node_id] = value; }
+    pub fn set_peer_availability(&mut self, node_id: usize, value: u64) { self.peer_availability[node_id] = value; }
     pub fn set_elevator(&mut self, node_id: usize, value: u64) { self.elevator[node_id] = value; }
     
 }
