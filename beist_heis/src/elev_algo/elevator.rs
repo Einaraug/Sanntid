@@ -66,7 +66,7 @@ impl Elevator {
             dirn: Dirn::Stop,
             requests: [[false; N_BUTTONS]; N_FLOORS],
             behaviour: Behaviour::Idle,
-            door_open_duration_s: 3.0,
+            door_open_duration_s: 1.5,
         }
     }
 }
