@@ -98,6 +98,14 @@ impl Elevator {
                                     if output.start_door_timer {
                                         timer = Some(Instant::now() + door_duration);
                                     }
+                                    // When a request is immediately served (elevator already at
+                                    // that floor), self.requests goes false→true→false in one
+                                    // step, so the before/after diff below misses it.
+                                    // Use clear_lights instead, which is populated for both
+                                    // Idle→DoorOpen and DoorOpen+should_clear_immediately cases.
+                                    for (f, b) in &output.clear_lights {
+                                        let _ = to_wv_completed.send(CompletedOrder { floor: *f, button: *b });
+                                    }
                                 }
                             }
                         }
@@ -181,6 +189,7 @@ impl Elevator {
             Behaviour::DoorOpen => {
                 if e.should_clear_immediately(btn_floor, btn_type) {
                     output.start_door_timer = true;
+                    output.clear_lights.push((btn_floor, btn_type));
                 } else {
                     e.requests[btn_floor][btn_type.to_index()] = true;
                     output.set_lights.push((btn_floor, btn_type));
