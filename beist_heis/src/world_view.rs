@@ -156,21 +156,21 @@ impl WorldView {
 
     pub fn set_hall_order_state(&mut self, floor: usize, button: Button, state: OrderState) {
         let hall_order = self.order_table.get_hall_order_mut(floor, button as usize);
-
+        if hall_order.state == state { return; }
         hall_order.set_state(state);
         self.counters.inc_hall_order(floor, button);
     }
 
     pub fn set_hall_order_node_id(&mut self, floor: usize, button: Button, node_id: usize) {
         let hall_order = self.order_table.get_hall_order_mut(floor, button as usize);
-
+        if hall_order.node_id == node_id { return; }
         hall_order.set_node_id(node_id);
         self.counters.inc_hall_order(floor, button);
-        }
+    }
 
     pub fn set_cab_order_state(&mut self, floor: usize, node_id: usize, state: OrderState) {
         let cab_order = self.order_table.get_cab_order_mut(floor, node_id);
-
+        if cab_order.state == state { return; }
         cab_order.set_state(state);
         self.counters.inc_cab_order(floor, node_id);
     }
@@ -284,6 +284,7 @@ impl WorldView {
     ) {
         const BROADCAST_INTERVAL: Duration = Duration::from_millis(100);
         let mut last_broadcast = Instant::now();
+        let mut last_sent_requests = [[false; N_BUTTONS]; N_FLOORS];
 
         loop {
             cbc::select! {
@@ -357,8 +358,15 @@ impl WorldView {
             // Sync call-button lights with confirmed order state.
             self.update_lights(&hw);
 
-            // Push the current request table to the local FSM.
-            let _ = to_fsm.send(self.get_requests_for_elevator());
+            // Push the request table to FSM only when it changes.
+            // Resending an unchanged table causes FSM to re-trigger on_request_button_press
+            // for orders it already cleared locally (but WV hasn't received CompletedOrder yet),
+            // which resets the door timer and locks the elevator in DoorOpen forever.
+            let current_requests = self.get_requests_for_elevator();
+            if current_requests != last_sent_requests {
+                let _ = to_fsm.send(current_requests);
+                last_sent_requests = current_requests;
+            }
 
             // Feed assigner every iteration — bounded(1) drops if it's still busy,
             // ensuring it always sees the latest state without queueing stale snapshots.
