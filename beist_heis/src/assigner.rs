@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::io::Write;
 use std::process::{Command, Stdio};
 use std::fs;
 use serde::Serialize;
@@ -58,14 +57,11 @@ pub fn assign_hall_requests(
 ) -> Result<OrderTable, Box<dyn std::error::Error>> {
     let input_json = serde_json::to_string(&build_input(wv))?;
 
-    let mut child = Command::new(assigner_path)
-        .stdin(Stdio::piped())
+    let output = Command::new(assigner_path)
+        .arg("--input")
+        .arg(&input_json)
         .stdout(Stdio::piped())
-        .spawn()?;
-
-    child.stdin.as_mut().unwrap().write_all(input_json.as_bytes())?;
-
-    let output = child.wait_with_output()?;
+        .output()?;
 
     if !output.status.success() {
         return Err(format!(
