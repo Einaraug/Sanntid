@@ -44,6 +44,7 @@ impl Elevator {
     ) {
         let door_duration = Duration::from_secs_f64(self.door_open_duration_s);
         let mut timer: Option<Instant> = None;
+        let mut last_sent = self.clone();
 
         // Init: go down if between floors
         if hw.floor_sensor().is_none() {
@@ -124,8 +125,12 @@ impl Elevator {
                 }
             }
 
-            // Report state to WorldView
-            let _ = to_wv.send(self.clone());
+            // Report state to WorldView only when something actually changed.
+            // Sending unconditionally would create a feedback loop with WV's request-table pushes.
+            if self != last_sent {
+                let _ = to_wv.send(self.clone());
+                last_sent = self.clone();
+            }
         }
     }
 

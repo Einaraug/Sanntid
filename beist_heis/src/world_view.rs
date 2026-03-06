@@ -6,7 +6,7 @@ use crate::elevio::poll::ButtonEvent;
 use crate::orders::{CabOrder, HallOrder, OrderState, OrderTable, UNASSIGNED_NODE};
 use crossbeam_channel as cbc;
 use serde::{Serialize, Deserialize};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use crate::elev_algo::elevator::N_BUTTONS;
 use crate::counters::*;
 
@@ -283,6 +283,7 @@ impl WorldView {
         to_assigner: cbc::Sender<WorldView>,
     ) {
         const BROADCAST_INTERVAL: Duration = Duration::from_millis(100);
+        let mut last_broadcast = Instant::now();
 
         loop {
             cbc::select! {
@@ -347,9 +348,6 @@ impl WorldView {
                             self.counters.inc_peer_availability(node);
                         }
                     }
-                    // Send a snapshot to the assigner thread (bounded(1): drops if busy,
-                    // so the assigner always works on the latest state).
-                    let _ = to_assigner.try_send(self.clone());
                 }
             }
 
@@ -362,8 +360,15 @@ impl WorldView {
             // Push the current request table to the local FSM.
             let _ = to_fsm.send(self.get_requests_for_elevator());
 
-            // Broadcast to network.
-            let _ = to_network.send(self.clone());
+            // Feed assigner every iteration — bounded(1) drops if it's still busy,
+            // ensuring it always sees the latest state without queueing stale snapshots.
+            let _ = to_assigner.try_send(self.clone());
+
+            // Rate-limited network broadcast.
+            if last_broadcast.elapsed() >= BROADCAST_INTERVAL {
+                let _ = to_network.send(self.clone());
+                last_broadcast = Instant::now();
+            }
         }
     }
     pub fn get_requests_for_elevator(&self) -> [[bool; N_BUTTONS]; N_FLOORS]{
