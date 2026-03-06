@@ -98,6 +98,7 @@ pub fn process_assigner_output(
                     result[floor][btn] = true;
                     let button = Button::from_index(btn).unwrap();
                     wv.set_hall_order_node_id(floor, button, self_id);
+                    wv.get_elevator_map().set(node_id, elevator);
                 }
             }
         }

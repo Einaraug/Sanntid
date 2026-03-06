@@ -1,3 +1,4 @@
+use crate::assigner::assign_hall_requests;
 use crate::elev_algo::elevator::{Button, Elevator, N_FLOORS};
 use crate::elev_algo::fsm::ConfirmedOrder;
 use crate::elev_algo::timer::Timer;
@@ -257,6 +258,8 @@ impl WorldView {
         const BROADCAST_INTERVAL: Duration = Duration::from_millis(100);
 
         loop {
+            // Assign hall orders
+            assign_hall_requests(&mut self, "hall_request_assigner");
             cbc::select! {
                 recv(from_buttons) -> msg => {
                     let Ok(btn) = msg else { break };
