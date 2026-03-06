@@ -33,8 +33,9 @@ fn build_input(wv: &WorldView) -> AssignerInput {
         ot.hall[floor][0].state == OrderState::Confirmed && ot.hall[floor][0].node_id == UNASSIGNED_NODE,
         ot.hall[floor][1].state == OrderState::Confirmed && ot.hall[floor][1].node_id == UNASSIGNED_NODE,
     ]);
+    let self_id = *wv.get_self_id();
     let states = (0..N_NODES)
-        .filter(|&id| wv.get_peer_availability().get(id))
+        .filter(|&id| id == self_id || wv.get_peer_availability().get(id))
         .map(|id| {
             let e = wv.get_elevator_map().get(id);
             (id.to_string(), ElevatorStateDto {
