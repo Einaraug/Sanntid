@@ -54,9 +54,11 @@ impl Elevator {
         }
 
         loop {
-            let timeout = timer
-                .map(|t| t.saturating_duration_since(Instant::now()))
-                .unwrap_or(Duration::from_secs(86400));
+            // Wake up at least when the door timer would expire.
+            // Keep it short so the timer fires promptly even if orders messages keep arriving.
+            let select_timeout = timer
+                .map(|deadline| deadline.saturating_duration_since(Instant::now()))
+                .unwrap_or(Duration::from_millis(100));
 
             let before = self.requests;
 
@@ -101,15 +103,20 @@ impl Elevator {
                         }
                     }
                 },
-                default(timeout) => {
-                    if timer.is_some() {
-                        timer = None;
-                        let (new_self, output) = self.on_door_timeout();
-                        self = new_self;
-                        self.apply_output(&hw, &output);
-                        if output.start_door_timer {
-                            timer = Some(Instant::now() + door_duration);
-                        }
+                default(select_timeout) => {}
+            }
+
+            // Check door timer after every event, not just in the default arm.
+            // Relying on default(timeout) alone fails when the orders channel is
+            // continuously fed by WV, preventing default from ever firing.
+            if let Some(deadline) = timer {
+                if Instant::now() >= deadline {
+                    timer = None;
+                    let (new_self, output) = self.on_door_timeout();
+                    self = new_self;
+                    self.apply_output(&hw, &output);
+                    if output.start_door_timer {
+                        timer = Some(Instant::now() + door_duration);
                     }
                 }
             }
