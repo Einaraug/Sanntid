@@ -13,12 +13,14 @@ use elev_algo::elevator::Elevator;
 use elev_algo::fsm::{SensorEvent, CompletedOrder};
 use elev_algo::elevator::{Button, N_BUTTONS, N_FLOORS};
 use world_view::WorldView;
+use orders::OrderTable;
 use crossbeam_channel as cbc;
 use std::thread;
 use std::time::Duration;
 
 const WV_PORT: u16 = 20100;
 const POLL_PERIOD: Duration = Duration::from_millis(25);
+const ASSIGNER_PATH: &str = "./hall_request_assigner";
 
 fn main() {
     let self_id: usize = std::env::args()
@@ -54,6 +56,12 @@ fn main() {
     // udp_rx → worldview
     let (from_net_tx, from_net_rx) = cbc::unbounded::<WorldView>();
 
+    // worldview → assigner (bounded(1): WV always sends latest snapshot, drops if busy)
+    let (to_assigner_tx, to_assigner_rx) = cbc::bounded::<WorldView>(1);
+
+    // assigner → worldview (assigned OrderTable)
+    let (from_assigner_tx, from_assigner_rx) = cbc::unbounded::<OrderTable>();
+
     // ═══════════════════════════════════════════════════════════════
     // Thread 1: hw_poll_buttons → WorldView
     // ═══════════════════════════════════════════════════════════════
@@ -69,8 +77,9 @@ fn main() {
     // ═══════════════════════════════════════════════════════════════
     // Thread 3: WorldView
     // ═══════════════════════════════════════════════════════════════
+    let hw3 = hw_elev.clone();
     let wv = WorldView::new(self_id);
-    thread::spawn(move || wv.run(btn_rx, state_rx, completed_rx, from_net_rx, order_tx, to_net_tx));
+    thread::spawn(move || wv.run(hw3, btn_rx, state_rx, completed_rx, from_net_rx, from_assigner_rx, order_tx, to_net_tx, to_assigner_tx));
 
     // ═══════════════════════════════════════════════════════════════
     // Thread 4: FSM
@@ -79,14 +88,26 @@ fn main() {
     thread::spawn(move || fsm.run(hw_elev, sensor_rx, order_rx, state_tx, completed_tx));
 
     // ═══════════════════════════════════════════════════════════════
-    // Thread 5: UDP TX
+    // Thread 5: Hall request assigner
+    // ═══════════════════════════════════════════════════════════════
+    thread::spawn(move || {
+        for wv_snapshot in to_assigner_rx {
+            match assigner::assign_hall_requests(&wv_snapshot, ASSIGNER_PATH) {
+                Ok(order_table) => { let _ = from_assigner_tx.send(order_table); }
+                Err(e) => eprintln!("assigner: {e}"),
+            }
+        }
+    });
+
+    // ═══════════════════════════════════════════════════════════════
+    // Thread 6: UDP TX
     // ═══════════════════════════════════════════════════════════════
     thread::spawn(move || {
         network::bcast::udp_send(WV_PORT, to_net_rx).unwrap();
     });
 
     // ═══════════════════════════════════════════════════════════════
-    // Thread 6: UDP RX
+    // Thread 7: UDP RX
     // ═══════════════════════════════════════════════════════════════
     thread::spawn(move || {
         network::bcast::udp_receive(WV_PORT, from_net_tx).unwrap();

@@ -1,8 +1,9 @@
 use crate::elev_algo::elevator::{Button, Elevator, N_FLOORS};
 use crate::elev_algo::fsm::CompletedOrder;
 use crate::elev_algo::timer::Timer;
+use crate::elevio::elev as hw;
 use crate::elevio::poll::ButtonEvent;
-use crate::orders::*;
+use crate::orders::{CabOrder, HallOrder, OrderState, OrderTable, UNASSIGNED_NODE};
 use crossbeam_channel as cbc;
 use serde::{Serialize, Deserialize};
 use std::time::Duration;
@@ -187,6 +188,20 @@ impl WorldView {
         self.counters.inc_cab_order(floor, node_id);
     }
 
+    /// Sync call-button lights with the confirmed order state.
+    /// Hall lights: on when any node has a confirmed hall order at that floor/button.
+    /// Cab lights:  on when this node has a confirmed cab order at that floor.
+    pub fn update_lights(&self, hw: &hw::Elevator) {
+        for floor in 0..N_FLOORS {
+            for btn in [Button::HallUp, Button::HallDown] {
+                let on = self.order_table.get_hall_order(floor, btn as usize).state == OrderState::Confirmed;
+                hw.call_button_light(floor as u8, btn.to_index() as u8, on);
+            }
+            let on = self.order_table.get_cab_order(floor, self.self_id).state == OrderState::Confirmed;
+            hw.call_button_light(floor as u8, Button::Cab.to_index() as u8, on);
+        }
+    }
+
 
     // --BUTTON PRESS HANDLER --
     pub fn on_button_press(&mut self, floor: usize, button: Button) {
@@ -212,21 +227,19 @@ impl WorldView {
 
     pub fn confirm_and_assign_orders(&mut self) {
         for floor in 0..N_FLOORS {
-        // HANDLE CAB ORDERS
-        for node_id in 0..N_NODES {
-            let cab_order = self.order_table.get_cab_order(floor, node_id);
-            let seen_by = cab_order.get_seen_by();
-            if self.is_all_acked(&seen_by) {
-                self.set_cab_order_state(floor, node_id,OrderState::Confirmed);
+            // HANDLE CAB ORDERS
+            for node_id in 0..N_NODES {
+                let cab_order = self.order_table.get_cab_order(floor, node_id);
+                if cab_order.state == OrderState::Unconfirmed && self.is_all_acked(&cab_order.get_seen_by()) {
+                    self.set_cab_order_state(floor, node_id, OrderState::Confirmed);
+                }
             }
-        }
 
-        // HANDLE HALL ORDERS
-        for button in [Button::HallUp, Button::HallDown] {
-            let hall_order = self.order_table.get_hall_order_mut(floor, button as usize);
-            let seen_by = hall_order.get_seen_by();
-            if self.is_all_acked(&seen_by) {
-                self.set_hall_order_state(floor, button, OrderState::Confirmed);
+            // HANDLE HALL ORDERS
+            for button in [Button::HallUp, Button::HallDown] {
+                let hall_order = self.order_table.get_hall_order(floor, button as usize);
+                if hall_order.state == OrderState::Unconfirmed && self.is_all_acked(&hall_order.get_seen_by()) {
+                    self.set_hall_order_state(floor, button, OrderState::Confirmed);
                 }
             }
         }
@@ -259,12 +272,15 @@ impl WorldView {
     }
     pub fn run(
         mut self,
+        hw: hw::Elevator,
         from_buttons: cbc::Receiver<ButtonEvent>,
         from_fsm: cbc::Receiver<Elevator>,
         from_fsm_completed: cbc::Receiver<CompletedOrder>,
         from_network: cbc::Receiver<WorldView>,
+        from_assigner: cbc::Receiver<OrderTable>,
         to_fsm: cbc::Sender<[[bool; N_BUTTONS]; N_FLOORS]>,
         to_network: cbc::Sender<WorldView>,
+        to_assigner: cbc::Sender<WorldView>,
     ) {
         const BROADCAST_INTERVAL: Duration = Duration::from_millis(100);
 
@@ -301,6 +317,26 @@ impl WorldView {
                         self.merge(&peer_wv);
                     }
                 },
+                recv(from_assigner) -> msg => {
+                    // Merge node_id assignments from assigner thread.
+                    // Only apply where order is still Confirmed+Unassigned to avoid
+                    // overwriting changes that arrived while the assigner was running.
+                    let Ok(assigned_table) = msg else { break };
+                    for floor in 0..N_FLOORS {
+                        for btn in [Button::HallUp, Button::HallDown] {
+                            let assigned = assigned_table.get_hall_order(floor, btn as usize);
+                            if assigned.node_id == UNASSIGNED_NODE {
+                                continue;
+                            }
+                            let current = self.order_table.get_hall_order(floor, btn as usize);
+                            if current.state == OrderState::Confirmed
+                                && current.node_id == UNASSIGNED_NODE
+                            {
+                                self.set_hall_order_node_id(floor, btn, assigned.node_id);
+                            }
+                        }
+                    }
+                },
                 default(BROADCAST_INTERVAL) => {
                     // Mark peers as dead if we haven't seen them within the timeout.
                     for node in 0..N_NODES {
@@ -311,18 +347,22 @@ impl WorldView {
                             self.counters.inc_peer_availability(node);
                         }
                     }
+                    // Send a snapshot to the assigner thread (bounded(1): drops if busy,
+                    // so the assigner always works on the latest state).
+                    let _ = to_assigner.try_send(self.clone());
                 }
             }
 
-            // Confirm orders seen by all available peers, assign hall orders to nodes.
+            // Confirm orders seen by all available peers.
             self.confirm_and_assign_orders();
-            // TODO: call assigner::assign_hall_requests(&mut self, assigner_path) here
-            //       (kept separate to avoid circular module dependency)
+
+            // Sync call-button lights with confirmed order state.
+            self.update_lights(&hw);
 
             // Push the current request table to the local FSM.
             let _ = to_fsm.send(self.get_requests_for_elevator());
 
-            // Broadcast to network
+            // Broadcast to network.
             let _ = to_network.send(self.clone());
         }
     }

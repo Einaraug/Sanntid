@@ -5,7 +5,7 @@ use std::fs;
 use serde::Serialize;
 use crate::world_view::*;
 use crate::elev_algo::elevator::{N_FLOORS, Dirn, Behaviour, Button};
-use crate::orders::{OrderState, UNASSIGNED_NODE};
+use crate::orders::{OrderState, OrderTable, UNASSIGNED_NODE};
 
 
 #[derive(Serialize)]
@@ -48,10 +48,13 @@ fn build_input(wv: &WorldView) -> AssignerInput {
     AssignerInput { hall_requests, states }
 }
 
+/// Run the hall request assigner binary and return a copy of the order table
+/// with node_ids set for orders assigned to this node.
+/// Takes an immutable snapshot — call from a dedicated thread.
 pub fn assign_hall_requests(
-    wv: &mut WorldView,
+    wv: &WorldView,
     assigner_path: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<OrderTable, Box<dyn std::error::Error>> {
     let input_json = serde_json::to_string(&build_input(wv))?;
 
     let mut child = Command::new(assigner_path)
@@ -71,8 +74,9 @@ pub fn assign_hall_requests(
     }
 
     let binary_output: BinaryOutput = serde_json::from_slice(&output.stdout)?;
-    process_assigner_output(wv, &binary_output);
-    Ok(())
+    let mut order_table = wv.get_order_table().clone();
+    process_assigner_output(*wv.get_self_id(), &binary_output, &mut order_table);
+    Ok(order_table)
 }
 
 pub fn save_assigner_input(wv: &WorldView, path: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -81,18 +85,19 @@ pub fn save_assigner_input(wv: &WorldView, path: &str) -> Result<(), Box<dyn std
     Ok(())
 }
 
-/// Process binary output and update the WorldView's order table.
-/// Sets node_id on all hall orders assigned to each node.
+/// Apply the assigner's binary output to `order_table` for `self_id` only.
+/// Each node runs this independently; other nodes' assignments propagate via WV merging.
 /// Extracted for testability without requiring the external binary.
-pub fn process_assigner_output(wv: &mut WorldView, binary_output: &BinaryOutput) {
-    for (id_str, node_orders) in binary_output {
-        let Ok(node_id) = id_str.parse::<usize>() else { continue };
+pub fn process_assigner_output(
+    self_id: usize,
+    binary_output: &BinaryOutput,
+    order_table: &mut OrderTable,
+) {
+    if let Some(node_orders) = binary_output.get(&self_id.to_string()) {
         for floor in 0..N_FLOORS {
             for btn in 0..2 {
                 if node_orders[floor][btn] {
-                    if let Some(button) = Button::from_index(btn) {
-                        wv.set_hall_order_node_id(floor, button, node_id);
-                    }
+                    order_table.get_hall_order_mut(floor, btn).set_node_id(self_id);
                 }
             }
         }
@@ -132,8 +137,8 @@ mod tests {
     }
 
     #[test]
-    fn process_output_assigns_orders_to_correct_nodes() {
-        let mut wv = WorldView::new(1); // self_id = 1
+    fn process_output_only_assigns_self_node() {
+        let mut ot = OrderTable::new();
 
         let mut binary_output: BinaryOutput = HashMap::new();
         // Node 0 gets floor 0 HallUp
@@ -151,26 +156,15 @@ mod tests {
             [false, false, false],
         ]);
 
-        process_assigner_output(&mut wv, &binary_output);
+        process_assigner_output(1, &binary_output, &mut ot);
 
-        let ot = wv.get_order_table();
-        assert_eq!(ot.hall[0][0].node_id, 0, "Floor 0 HallUp should be assigned to node 0");
-        assert_eq!(ot.hall[2][1].node_id, 1, "Floor 2 HallDown should be assigned to node 1");
+        assert_eq!(ot.hall[2][1].node_id, 1, "Floor 2 HallDown should be assigned to node 1 (self)");
+        assert_eq!(ot.hall[0][0].node_id, UNASSIGNED_NODE, "Floor 0 HallUp belongs to node 0, should not be set by node 1's assigner");
     }
 
     #[test]
     fn process_output_sets_node_id_on_assigned_orders() {
-        let mut wv = WorldView::new(2); // self_id = 2
-
-        // Set up confirmed unassigned order at floor 3 HallUp
-        wv.set_hall_order_state(3, Button::HallUp, OrderState::Confirmed);
-
-        // Verify it starts as unassigned
-        assert_eq!(
-            wv.get_order_table().hall[3][0].node_id,
-            UNASSIGNED_NODE,
-            "Order should start unassigned"
-        );
+        let mut ot = OrderTable::new();
 
         let mut binary_output: BinaryOutput = HashMap::new();
         binary_output.insert("2".to_string(), [
@@ -180,19 +174,14 @@ mod tests {
             [true, false, false], // floor 3 HallUp assigned to node 2
         ]);
 
-        let _result = process_assigner_output(&mut wv, &binary_output);
+        process_assigner_output(2, &binary_output, &mut ot);
 
-        // Verify node_id was set
-        assert_eq!(
-            wv.get_order_table().hall[3][0].node_id,
-            2,
-            "Order should now be assigned to node 2"
-        );
+        assert_eq!(ot.hall[3][0].node_id, 2, "Order should be assigned to node 2");
     }
 
     #[test]
     fn process_output_discards_cab_orders_from_binary() {
-        let mut wv = WorldView::new(0);
+        let mut ot = OrderTable::new();
 
         let mut binary_output: BinaryOutput = HashMap::new();
         // Binary includes cab order (index 2) - should be ignored
@@ -203,11 +192,8 @@ mod tests {
             [false, false, false],
         ]);
 
-        process_assigner_output(&mut wv, &binary_output);
+        process_assigner_output(0, &binary_output, &mut ot);
 
-        // No hall orders should have been assigned
-        let ot = wv.get_order_table();
-        use crate::orders::UNASSIGNED_NODE;
         for floor in 0..N_FLOORS {
             assert_eq!(ot.hall[floor][0].node_id, UNASSIGNED_NODE, "No HallUp should be assigned");
             assert_eq!(ot.hall[floor][1].node_id, UNASSIGNED_NODE, "No HallDown should be assigned");
