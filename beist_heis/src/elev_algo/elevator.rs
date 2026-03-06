@@ -48,7 +48,7 @@ pub enum Behaviour {
     Moving,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct Elevator {
     pub floor: i32,
     pub dirn: Dirn,

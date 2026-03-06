@@ -1,5 +1,6 @@
 use crate::elev_algo::elevator::{Button, Elevator, N_FLOORS};
 use crate::elev_algo::fsm::ConfirmedOrder;
+use crate::elev_algo::timer::Timer;
 use crate::elevio::poll::ButtonEvent;
 use crate::orders::*;
 use crossbeam_channel as cbc;
@@ -36,19 +37,60 @@ impl ElevatorMap {
 #[derive(Clone, Serialize, Deserialize)]  
 pub struct PeerAvailability{
     peer_availability: [bool; N_NODES],
+    // Timer state is runtime-only and cannot be serialized (Instant isn't serializable).
+    #[serde(skip)]
+    peer_timer: [Timer; N_NODES],
 }
 impl PeerAvailability {
     pub fn new() -> Self {
         Self {
-            peer_availability: [false; N_NODES], //Initially, all peers are unavailable until they announce themselves. WorldView owns the availability, so we can initialize it here.
+            peer_availability: [false; N_NODES], // Initially, all peers are unavailable until they announce themselves.
+            peer_timer: std::array::from_fn(|_| Timer::new()),
         }
     }
+
     pub fn get(&self, node_id: usize) -> bool {
         self.peer_availability[node_id]
     }
-    pub fn set(&mut self, node_id: usize, available: bool) {
-        self.peer_availability[node_id] = available;
+
+    /// Set a peer's availability state.
+    ///
+    /// Returns `true` if the value flipped (true->false or false->true).
+    pub fn set(&mut self, node_id: usize, available: bool) -> bool {
+        let previous = self.peer_availability[node_id];
+        if previous != available {
+            self.peer_availability[node_id] = available;
+            return true;
+        }
+        false
     }
+
+    /// Mark that we have received a message from `node_id` just now.
+    ///
+    /// Returns `true` if availability flipped from false -> true.
+    pub fn mark_seen(&mut self, node_id: usize, timeout: Duration) -> bool {
+        let flipped = self.set(node_id, true);
+        self.peer_timer[node_id].start(timeout.as_secs_f64());
+        flipped
+    }
+
+    /// Returns true if `node_id` should be considered timed out.
+    /// If it times out, we also mark the peer as unavailable.
+    ///
+    /// Returns `true` only when the peer transitions from available -> unavailable.
+    pub fn should_timeout(&mut self, node_id: usize) -> bool {
+        if !self.peer_availability[node_id] {
+            return false; // already unavailable
+        }
+
+        if self.peer_timer[node_id].timed_out() {
+            self.peer_availability[node_id] = false;
+            return true;
+        }
+
+        false
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (usize, bool)> {
         self.peer_availability.iter().copied().enumerate()
     }
@@ -100,13 +142,16 @@ impl WorldView {
 
     // Setters:
     pub fn set_elevator(&mut self, node_id: usize, elevator: Elevator) {
-        self.elevator_map.set(node_id, elevator);
-        self.counters.inc_elevator(node_id);   
+        if elevator != self.elevator_map.elevator[node_id] {
+            self.elevator_map.set(node_id, elevator);
+            self.counters.inc_elevator(node_id);   
+        }
     }
 
     pub fn set_peer_availability(&mut self, node_id: usize, available: bool) {
-        self.peer_availability.set(node_id, available);
-        self.counters.inc_peer_availability(node_id);
+        if self.peer_availability.set(node_id, available) {
+            self.counters.inc_peer_availability(node_id);
+        }
     }
 
     pub fn set_hall_order_state(&mut self, floor: usize, button: Button, state: OrderState) {
@@ -226,11 +271,27 @@ impl WorldView {
                 recv(from_network) -> msg => {
                     let Ok(peer_wv) = msg else { break };
                     if peer_wv.self_id != self.self_id {
+                        // Update the peer's last-seen timer and merge its worldview.
+                        const PEER_TIMEOUT: Duration = Duration::from_millis(500);
+                        if self.peer_availability.mark_seen(peer_wv.self_id, PEER_TIMEOUT) {
+                            self.counters.inc_peer_availability(peer_wv.self_id);
+                        }
                         self.merge(&peer_wv);
                     }
                 },
                 default(BROADCAST_INTERVAL) => {
                     // Periodic broadcast
+
+                    // Mark peers as dead if we haven't seen them within the timeout.
+                    for node in 0..N_NODES {
+                        // Never time ourselves out
+                        if node == self.self_id {
+                            continue;
+                        }
+                        if self.peer_availability.should_timeout(node) {
+                            self.counters.inc_peer_availability(node);
+                        }
+                    }
                 }
             }
 
@@ -308,5 +369,54 @@ fn merge_elevator(local: &mut WorldView, incoming: &WorldView) {
             local.elevator_map.set(node, incoming_elevator);
             local.counters.set_elevator(node, incoming_ct);
         }
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::elev_algo::elevator::Elevator;
+
+    #[test]
+    fn set_elevator_updates_only_on_change() {
+        let mut wv = WorldView::new(0);
+
+        // Starting state: elevator is default, counter is 0
+        assert_eq!(wv.get_counters().get_elevator(0), 0);
+
+        // Setting the same elevator again should not increment the counter
+        wv.set_elevator(0, Elevator::new());
+        assert_eq!(wv.get_counters().get_elevator(0), 0);
+
+        // Changing the elevator should update the stored elevator and increment the counter
+        let mut new_elevator = Elevator::new();
+        new_elevator.floor = 3;
+        wv.set_elevator(0, new_elevator);
+
+        assert_eq!(wv.get_counters().get_elevator(0), 1);
+        assert_eq!(wv.get_elevator_map().get(0), &new_elevator);
+
+        // Setting the same elevator again should not increment the counter further
+        wv.set_elevator(0, new_elevator);
+        assert_eq!(wv.get_counters().get_elevator(0), 1);
+    }
+
+    #[test]
+    fn peer_availability_timeout_uses_last_seen() {
+        let mut wv = WorldView::new(0);
+        let peer_id = 1;
+
+        // Mark the peer as seen right now with a short timeout.
+        wv.peer_availability.mark_seen(peer_id, Duration::from_millis(10));
+        assert!(wv.get_peer_availability().get(peer_id));
+        assert!(!wv.peer_availability.should_timeout(peer_id));
+
+        // Wait until the timeout is exceeded.
+        std::thread::sleep(Duration::from_millis(20));
+        let did_timeout = wv.peer_availability.should_timeout(peer_id);
+
+        assert!(did_timeout, "Peer should be considered timed out");
+        assert!(!wv.get_peer_availability().get(peer_id), "Peer should be marked unavailable");
     }
 }

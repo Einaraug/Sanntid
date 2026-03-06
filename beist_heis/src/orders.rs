@@ -15,7 +15,7 @@ pub enum OrderState {
 pub struct HallOrder{
     pub state: OrderState,
     pub node_id: usize,
-    pub seen_by: [bool; N_NODES],git 
+    pub seen_by: [bool; N_NODES]
 }
 
 impl HallOrder {
@@ -52,7 +52,6 @@ impl HallOrder {
          *self = HallOrder::new();
     }
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CabOrder {
     pub state: OrderState,
