@@ -299,6 +299,41 @@ impl WorldView {
             let _ = to_network.send(self.clone());
         }
     }
+    pub fn get_requests_for_elevator(&mut self) -> [[bool; N_BUTTONS]; N_FLOORS]{
+        let mut requests = [[false; N_BUTTONS]; N_FLOORS];
+        for floor in 0..N_FLOORS {
+        // Cab calls belong only to self
+        requests[floor][Button::Cab as usize] = 
+        self.order_table.get_cab_order(floor, self.self_id).state == OrderState::Confirmed;
+        
+        // Hall calls assigned to self
+            for btn in [Button::HallUp, Button::HallDown] {
+                let order = &self.order_table.get_hall_order(floor, btn as usize);
+                if order.state == OrderState::Confirmed && order.get_node_id() == self.self_id {
+                    requests[floor][btn as usize] = true;
+                }
+            }
+    }
+    requests
+    }
+    
+    pub fn update_orders_from_elevator(&mut self, elevator: Elevator) {
+        for floor in 0..N_FLOORS {
+            for btn in [Button::Cab, Button::HallDown, Button::HallUp] {
+                if !elevator.requests[floor][btn as usize] {
+                    match btn {
+                        Button::Cab => {
+                            self.order_table.get_cab_order_mut(floor, self.self_id).clear();
+                        },
+                        Button::HallDown | Button::HallUp => {
+                            self.order_table.get_hall_order_mut(floor, btn as usize).clear();
+                        },
+                    }
+                }
+            }
+        }
+        self.set_elevator(self.self_id, elevator);
+    }
 }
 
 

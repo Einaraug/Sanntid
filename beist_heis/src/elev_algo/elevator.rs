@@ -1,3 +1,5 @@
+use std::usize;
+
 use serde::{Serialize, Deserialize};
 
 pub const N_FLOORS: usize = 4;
