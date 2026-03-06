@@ -27,7 +27,7 @@ pub fn udp_send<T: serde::Serialize>(port: u16, ch: cbc::Receiver<T>) -> std::io
 pub fn udp_receive<T: serde::de::DeserializeOwned>(port: u16, ch: cbc::Sender<T>) -> std::io::Result<()> {
     let s = sock::new_rx(port)?;
 
-    let mut buf: [MaybeUninit<u8>; 1024] = [MaybeUninit::uninit(); 1024];
+    let mut buf: [MaybeUninit<u8>; 4096] = [MaybeUninit::uninit(); 4096];
     loop {
         match parse_packet(&s, &mut buf) { //waits for a UDP packet and tries to deserialize it. match handles two cases:
             Ok(d) => ch.send(d).unwrap(), // successfully got a packet, forward it onto the channel so your main code can receive it
@@ -40,7 +40,7 @@ pub fn udp_receive<T: serde::de::DeserializeOwned>(port: u16, ch: cbc::Sender<T>
 //Helper function
 fn parse_packet<'a, T: Deserialize<'a>>(
     s: &'_ Socket,
-    buf: &'a mut [MaybeUninit<u8>; 1024],
+    buf: &'a mut [MaybeUninit<u8>; 4096],
 ) -> Result<T, Box<dyn error::Error>> {
     let n = s.recv(buf)?;
     let bytes = unsafe { std::slice::from_raw_parts(buf.as_ptr() as *const u8, n) };
