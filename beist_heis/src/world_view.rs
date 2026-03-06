@@ -1,13 +1,12 @@
 use crate::elev_algo::elevator::{Button, Elevator, N_FLOORS};
-use crate::elev_algo::fsm::ConfirmedOrder;
+use crate::elev_algo::fsm::CompletedOrder;
 use crate::elev_algo::timer::Timer;
 use crate::elevio::poll::ButtonEvent;
 use crate::orders::*;
 use crossbeam_channel as cbc;
 use serde::{Serialize, Deserialize};
 use std::time::Duration;
-use crate::elev_algo::elevator::{N_BUTTONS};
-use crate::orders::*;
+use crate::elev_algo::elevator::N_BUTTONS;
 use crate::counters::*;
 
 
@@ -175,6 +174,19 @@ impl WorldView {
         self.counters.inc_cab_order(floor, node_id);
     }
 
+    /// Clear a hall order (served). Resets state/node_id and increments counter
+    /// so peers learn about the completion via the merge protocol.
+    pub fn clear_hall_order(&mut self, floor: usize, button: Button) {
+        self.order_table.get_hall_order_mut(floor, button as usize).clear();
+        self.counters.inc_hall_order(floor, button);
+    }
+
+    /// Clear a cab order (served).
+    pub fn clear_cab_order(&mut self, floor: usize, node_id: usize) {
+        self.order_table.get_cab_order_mut(floor, node_id).clear();
+        self.counters.inc_cab_order(floor, node_id);
+    }
+
 
     // --BUTTON PRESS HANDLER --
     pub fn on_button_press(&mut self, floor: usize, button: Button) {
@@ -249,11 +261,11 @@ impl WorldView {
         mut self,
         from_buttons: cbc::Receiver<ButtonEvent>,
         from_fsm: cbc::Receiver<Elevator>,
+        from_fsm_completed: cbc::Receiver<CompletedOrder>,
         from_network: cbc::Receiver<WorldView>,
-        to_fsm: cbc::Sender<ConfirmedOrder>,
+        to_fsm: cbc::Sender<[[bool; N_BUTTONS]; N_FLOORS]>,
         to_network: cbc::Sender<WorldView>,
     ) {
-        //TODO: update func names
         const BROADCAST_INTERVAL: Duration = Duration::from_millis(100);
 
         loop {
@@ -268,10 +280,20 @@ impl WorldView {
                     let Ok(elev) = msg else { break };
                     self.set_elevator(self.self_id, elev);
                 },
+                recv(from_fsm_completed) -> msg => {
+                    let Ok(completed) = msg else { break };
+                    match completed.button {
+                        Button::HallUp | Button::HallDown => {
+                            self.clear_hall_order(completed.floor, completed.button);
+                        }
+                        Button::Cab => {
+                            self.clear_cab_order(completed.floor, self.self_id);
+                        }
+                    }
+                },
                 recv(from_network) -> msg => {
                     let Ok(peer_wv) = msg else { break };
                     if peer_wv.self_id != self.self_id {
-                        // Update the peer's last-seen timer and merge its worldview.
                         const PEER_TIMEOUT: Duration = Duration::from_millis(500);
                         if self.peer_availability.mark_seen(peer_wv.self_id, PEER_TIMEOUT) {
                             self.counters.inc_peer_availability(peer_wv.self_id);
@@ -280,11 +302,8 @@ impl WorldView {
                     }
                 },
                 default(BROADCAST_INTERVAL) => {
-                    // Periodic broadcast
-
                     // Mark peers as dead if we haven't seen them within the timeout.
                     for node in 0..N_NODES {
-                        // Never time ourselves out
                         if node == self.self_id {
                             continue;
                         }
@@ -295,11 +314,19 @@ impl WorldView {
                 }
             }
 
+            // Confirm orders seen by all available peers, assign hall orders to nodes.
+            self.confirm_and_assign_orders();
+            // TODO: call assigner::assign_hall_requests(&mut self, assigner_path) here
+            //       (kept separate to avoid circular module dependency)
+
+            // Push the current request table to the local FSM.
+            let _ = to_fsm.send(self.get_requests_for_elevator());
+
             // Broadcast to network
             let _ = to_network.send(self.clone());
         }
     }
-    pub fn get_requests_for_elevator(&mut self) -> [[bool; N_BUTTONS]; N_FLOORS]{
+    pub fn get_requests_for_elevator(&self) -> [[bool; N_BUTTONS]; N_FLOORS]{
         let mut requests = [[false; N_BUTTONS]; N_FLOORS];
         for floor in 0..N_FLOORS {
         // Cab calls belong only to self

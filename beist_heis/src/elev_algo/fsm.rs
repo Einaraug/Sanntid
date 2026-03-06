@@ -20,8 +20,8 @@ pub enum SensorEvent {
     StopButton(bool),
 }
 
-/// Orders confirmed by WorldView after merging/assignment
-pub struct ConfirmedOrder {
+/// Sent FSM → WorldView when an order is completed (floor served).
+pub struct CompletedOrder {
     pub floor: usize,
     pub button: Button,
 }
@@ -38,8 +38,9 @@ impl Elevator {
         mut self,
         hw: hw::Elevator,
         sensors: cbc::Receiver<SensorEvent>,
-        orders: cbc::Receiver<ConfirmedOrder>,
+        orders: cbc::Receiver<[[bool; N_BUTTONS]; N_FLOORS]>,
         to_wv: cbc::Sender<Elevator>,
+        to_wv_completed: cbc::Sender<CompletedOrder>,
     ) {
         let door_duration = Duration::from_secs_f64(self.door_open_duration_s);
         let mut timer: Option<Instant> = None;
@@ -55,6 +56,8 @@ impl Elevator {
             let timeout = timer
                 .map(|t| t.saturating_duration_since(Instant::now()))
                 .unwrap_or(Duration::from_secs(86400));
+
+            let before = self.requests;
 
             cbc::select! {
                 recv(sensors) -> msg => {
@@ -80,12 +83,21 @@ impl Elevator {
                     }
                 },
                 recv(orders) -> msg => {
-                    let Ok(order) = msg else { break };
-                    let (new_self, output) = self.on_request_button_press(order.floor, order.button);
-                    self = new_self;
-                    self.apply_output(&hw, &output);
-                    if output.start_door_timer {
-                        timer = Some(Instant::now() + door_duration);
+                    // WV pushes the full request table; trigger FSM for any newly added request.
+                    let Ok(new_requests) = msg else { break };
+                    for floor in 0..N_FLOORS {
+                        for btn in 0..N_BUTTONS {
+                            if new_requests[floor][btn] && !self.requests[floor][btn] {
+                                if let Some(button) = Button::from_index(btn) {
+                                    let (new_self, output) = self.on_request_button_press(floor, button);
+                                    self = new_self;
+                                    self.apply_output(&hw, &output);
+                                    if output.start_door_timer {
+                                        timer = Some(Instant::now() + door_duration);
+                                    }
+                                }
+                            }
+                        }
                     }
                 },
                 default(timeout) => {
@@ -96,6 +108,17 @@ impl Elevator {
                         self.apply_output(&hw, &output);
                         if output.start_door_timer {
                             timer = Some(Instant::now() + door_duration);
+                        }
+                    }
+                }
+            }
+
+            // Notify WV of any requests cleared during this event (orders served).
+            for f in 0..N_FLOORS {
+                for b in 0..N_BUTTONS {
+                    if before[f][b] && !self.requests[f][b] {
+                        if let Some(button) = Button::from_index(b) {
+                            let _ = to_wv_completed.send(CompletedOrder { floor: f, button });
                         }
                     }
                 }

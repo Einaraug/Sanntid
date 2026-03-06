@@ -10,13 +10,12 @@ mod counters;
 use elevio::elev as hw;
 use elevio::poll::{self, ButtonEvent};
 use elev_algo::elevator::Elevator;
-use elev_algo::fsm::{SensorEvent, ConfirmedOrder};
+use elev_algo::fsm::{SensorEvent, CompletedOrder};
+use elev_algo::elevator::{Button, N_BUTTONS, N_FLOORS};
 use world_view::WorldView;
 use crossbeam_channel as cbc;
 use std::thread;
 use std::time::Duration;
-
-use crate::elev_algo::elevator::N_FLOORS;
 
 const WV_PORT: u16 = 20100;
 const POLL_PERIOD: Duration = Duration::from_millis(25);
@@ -40,11 +39,14 @@ fn main() {
     // hw_poll_sensors → fsm
     let (sensor_tx, sensor_rx) = cbc::unbounded::<SensorEvent>();
 
-    // worldview → fsm (confirmed orders)
-    let (order_tx, order_rx) = cbc::unbounded::<ConfirmedOrder>();
+    // worldview → fsm (full request table)
+    let (order_tx, order_rx) = cbc::unbounded::<[[bool; N_BUTTONS]; N_FLOORS]>();
 
     // fsm → worldview (elevator state)
     let (state_tx, state_rx) = cbc::unbounded::<Elevator>();
+
+    // fsm → worldview (completed orders)
+    let (completed_tx, completed_rx) = cbc::unbounded::<CompletedOrder>();
 
     // worldview → udp_tx
     let (to_net_tx, to_net_rx) = cbc::unbounded::<WorldView>();
@@ -68,13 +70,13 @@ fn main() {
     // Thread 3: WorldView
     // ═══════════════════════════════════════════════════════════════
     let wv = WorldView::new(self_id);
-    thread::spawn(move || wv.run(btn_rx, state_rx, from_net_rx, order_tx, to_net_tx));
+    thread::spawn(move || wv.run(btn_rx, state_rx, completed_rx, from_net_rx, order_tx, to_net_tx));
 
     // ═══════════════════════════════════════════════════════════════
     // Thread 4: FSM
     // ═══════════════════════════════════════════════════════════════
     let fsm = Elevator::new();
-    thread::spawn(move || fsm.run(hw_elev, sensor_rx, order_rx, state_tx));
+    thread::spawn(move || fsm.run(hw_elev, sensor_rx, order_rx, state_tx, completed_tx));
 
     // ═══════════════════════════════════════════════════════════════
     // Thread 5: UDP TX
