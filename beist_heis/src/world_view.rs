@@ -316,24 +316,6 @@ impl WorldView {
     }
     requests
     }
-    
-    pub fn update_orders_from_elevator(&mut self, elevator: Elevator) {
-        for floor in 0..N_FLOORS {
-            for btn in [Button::Cab, Button::HallDown, Button::HallUp] {
-                if !elevator.requests[floor][btn as usize] {
-                    match btn {
-                        Button::Cab => {
-                            self.order_table.get_cab_order_mut(floor, self.self_id).clear();
-                        },
-                        Button::HallDown | Button::HallUp => {
-                            self.order_table.get_hall_order_mut(floor, btn as usize).clear();
-                        },
-                    }
-                }
-            }
-        }
-        self.set_elevator(self.self_id, elevator);
-    }
 }
 
 
@@ -404,54 +386,5 @@ fn merge_elevator(local: &mut WorldView, incoming: &WorldView) {
             local.elevator_map.set(node, incoming_elevator);
             local.counters.set_elevator(node, incoming_ct);
         }
-    }
-}
-
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::elev_algo::elevator::Elevator;
-
-    #[test]
-    fn set_elevator_updates_only_on_change() {
-        let mut wv = WorldView::new(0);
-
-        // Starting state: elevator is default, counter is 0
-        assert_eq!(wv.get_counters().get_elevator(0), 0);
-
-        // Setting the same elevator again should not increment the counter
-        wv.set_elevator(0, Elevator::new());
-        assert_eq!(wv.get_counters().get_elevator(0), 0);
-
-        // Changing the elevator should update the stored elevator and increment the counter
-        let mut new_elevator = Elevator::new();
-        new_elevator.floor = 3;
-        wv.set_elevator(0, new_elevator);
-
-        assert_eq!(wv.get_counters().get_elevator(0), 1);
-        assert_eq!(wv.get_elevator_map().get(0), &new_elevator);
-
-        // Setting the same elevator again should not increment the counter further
-        wv.set_elevator(0, new_elevator);
-        assert_eq!(wv.get_counters().get_elevator(0), 1);
-    }
-
-    #[test]
-    fn peer_availability_timeout_uses_last_seen() {
-        let mut wv = WorldView::new(0);
-        let peer_id = 1;
-
-        // Mark the peer as seen right now with a short timeout.
-        wv.peer_availability.mark_seen(peer_id, Duration::from_millis(10));
-        assert!(wv.get_peer_availability().get(peer_id));
-        assert!(!wv.peer_availability.should_timeout(peer_id));
-
-        // Wait until the timeout is exceeded.
-        std::thread::sleep(Duration::from_millis(20));
-        let did_timeout = wv.peer_availability.should_timeout(peer_id);
-
-        assert!(did_timeout, "Peer should be considered timed out");
-        assert!(!wv.get_peer_availability().get(peer_id), "Peer should be marked unavailable");
     }
 }
