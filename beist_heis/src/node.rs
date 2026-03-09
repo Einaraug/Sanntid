@@ -71,7 +71,7 @@ pub fn run(
                     for btn in [Button::HallUp, Button::HallDown] {
                         let a = assigned.get_hall_order(floor, btn.to_index());
                         let c = wv.order_table.get_hall_order(floor, btn.to_index());
-                        if a.node_id != UNASSIGNED_NODE
+                        if a.node_id == wv.self_id
                             && c.state == OrderState::Confirmed
                             && c.node_id == UNASSIGNED_NODE
                         {
