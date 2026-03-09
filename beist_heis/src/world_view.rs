@@ -39,12 +39,15 @@ pub struct WorldView {
 
 impl WorldView {
     pub fn new(self_id: usize) -> Self {
-        Self {
+        let mut wv = Self {
             self_id,
             elevator_map: ElevatorMap::new(),
             peer_monitor: PeerMonitor::new(),
             order_table:  OrderTable::new(),
             counters:     Counters::new(),
-        }
+        };
+        wv.peer_monitor.availability[self_id] = true;
+        wv.counters.inc_peer_availability(self_id);
+        wv
     }
 }
