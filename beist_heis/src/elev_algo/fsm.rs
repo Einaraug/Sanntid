@@ -131,6 +131,10 @@ impl Elevator {
                                         let _ = to_wv_completed.send(CompletedOrder { floor: *f, button: *b });
                                     }
                                 }
+                            } else if !new_requests[floor][btn] && self.requests[floor][btn] {
+                                // Order was unassigned or completed by another node — drop it
+                                // from FSM state without sending CompletedOrder (not served by us).
+                                self.requests[floor][btn] = false;
                             }
                         }
                     }
