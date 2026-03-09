@@ -37,10 +37,15 @@ fn build_input(wv: &WorldView) -> AssignerInput {
         .filter(|&id| id == self_id || wv.peer_monitor.is_available(id))
         .map(|id| {
             let e = wv.elevator_map.get(id);
+            let direction = match (e.floor, e.dirn) {
+                (0, Dirn::Down)                                    => Dirn::Stop,
+                (f, Dirn::Up) if f == N_FLOORS as i32 - 1         => Dirn::Stop,
+                _                                                  => e.dirn,
+            };
             (id.to_string(), ElevatorStateDto {
                 behaviour: e.behaviour,
                 floor: e.floor,
-                direction: e.dirn,
+                direction,
                 cab_requests: e.requests.map(|floor_btns| floor_btns[2]),
             })
         })
