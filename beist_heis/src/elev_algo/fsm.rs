@@ -65,7 +65,7 @@ impl Elevator {
                 .min()
                 .unwrap_or(Duration::from_millis(100));
 
-            let before = self.requests;
+            let mut before = self.requests;
 
             cbc::select! {
                 recv(sensors) -> msg => {
@@ -134,7 +134,10 @@ impl Elevator {
                             } else if !new_requests[floor][btn] && self.requests[floor][btn] {
                                 // Order was unassigned or completed by another node — drop it
                                 // from FSM state without sending CompletedOrder (not served by us).
+                                // Also update before so the before/after diff below doesn't
+                                // mistake this for a served order and fire a spurious CompletedOrder.
                                 self.requests[floor][btn] = false;
+                                before[floor][btn] = false;
                             }
                         }
                     }
