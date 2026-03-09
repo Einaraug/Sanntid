@@ -1,470 +1,49 @@
-use crate::elev_algo::elevator::{Button, Elevator, N_FLOORS};
-use crate::elev_algo::fsm::CompletedOrder;
-use crate::elev_algo::timer::Timer;
-use crate::elevio::elev as hw;
-use crate::elevio::poll::ButtonEvent;
-use crate::orders::{CabOrder, HallOrder, OrderState, OrderTable, UNASSIGNED_NODE};
-use crossbeam_channel as cbc;
+use crate::elev_algo::elevator::Elevator;
+use crate::orders::OrderTable;
+use crate::counters::Counters;
+use crate::peer_monitor::PeerMonitor;
 use serde::{Serialize, Deserialize};
-use std::time::{Duration, Instant};
-use crate::elev_algo::elevator::N_BUTTONS;
-use crate::counters::*;
-
 
 pub const N_NODES: usize = 3;
-type ElevId = usize;
 
+// ── ElevatorMap ───────────────────────────────────────────────────────────────
 
-#[derive(Clone, Serialize, Deserialize)]  
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ElevatorMap {
-    elevator: [Elevator; N_NODES],
+    pub elevator: [Elevator; N_NODES],
 }
+
 impl ElevatorMap {
     pub fn new() -> Self {
-        Self {
-            elevator: [Elevator::new(); N_NODES], //WorldView owns the elevators, so we can initialize them here. A node only owns its own id.
-        }
+        Self { elevator: [Elevator::new(); N_NODES] }
     }
     pub fn get(&self, node_id: usize) -> &Elevator {
         &self.elevator[node_id]
     }
     pub fn set(&mut self, node_id: usize, elevator: Elevator) {
         self.elevator[node_id] = elevator;
-        
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]  
-pub struct PeerAvailability{
-    peer_availability: [bool; N_NODES],
-    // Timer state is runtime-only and cannot be serialized (Instant isn't serializable).
-    #[serde(skip)]
-    peer_timer: [Timer; N_NODES],
-}
-impl PeerAvailability {
-    pub fn new() -> Self {
-        Self {
-            peer_availability: [false; N_NODES], // Initially, all peers are unavailable until they announce themselves.
-            peer_timer: std::array::from_fn(|_| Timer::new()),
-        }
-    }
+// ── WorldView (pure data container) ──────────────────────────────────────────
 
-    pub fn get(&self, node_id: usize) -> bool {
-        self.peer_availability[node_id]
-    }
-
-    /// Set a peer's availability state.
-    ///
-    /// Returns `true` if the value flipped (true->false or false->true).
-    pub fn set(&mut self, node_id: usize, available: bool) -> bool {
-        let previous = self.peer_availability[node_id];
-        if previous != available {
-            self.peer_availability[node_id] = available;
-            return true;
-        }
-        false
-    }
-
-    /// Mark that we have received a message from `node_id` just now.
-    ///
-    /// Returns `true` if availability flipped from false -> true.
-    pub fn mark_seen(&mut self, node_id: usize, timeout: Duration) -> bool {
-        let flipped = self.set(node_id, true);
-        self.peer_timer[node_id].start(timeout.as_secs_f64());
-        flipped
-    }
-
-    /// Returns true if `node_id` should be considered timed out.
-    /// If it times out, we also mark the peer as unavailable.
-    ///
-    /// Returns `true` only when the peer transitions from available -> unavailable.
-    pub fn should_timeout(&mut self, node_id: usize) -> bool {
-        if !self.peer_availability[node_id] {
-            return false; // already unavailable
-        }
-
-        if self.peer_timer[node_id].timed_out() {
-            self.peer_availability[node_id] = false;
-            return true;
-        }
-
-        false
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (usize, bool)> {
-        self.peer_availability.iter().copied().enumerate()
-    }
-}
-
-
-//TODO: Generalize names
-#[derive(Clone, Serialize, Deserialize)]  
+#[derive(Clone, Serialize, Deserialize)]
 pub struct WorldView {
-    self_id: usize,
-    elevator_map: ElevatorMap,
-    peer_availability: PeerAvailability,
-    order_table: OrderTable,
-    counters: Counters,
+    pub self_id:      usize,
+    pub elevator_map: ElevatorMap,
+    pub peer_monitor: PeerMonitor,
+    pub order_table:  OrderTable,
+    pub counters:     Counters,
 }
 
 impl WorldView {
     pub fn new(self_id: usize) -> Self {
         Self {
-            self_id: self_id,
+            self_id,
             elevator_map: ElevatorMap::new(),
-            peer_availability: PeerAvailability::new(),
-            order_table: OrderTable::new(),
-            counters: Counters::new(),
-        }
-    }
-
-    // Getters :: Should the return type be references?
-    pub fn get_self_id(&self) -> &usize {
-        &self.self_id
-    }
-
-    pub fn get_elevator_map(&self) -> &ElevatorMap {
-        &self.elevator_map
-    }
-
-    pub fn get_peer_availability(&self) -> &PeerAvailability {
-        &self.peer_availability
-    }
-
-    pub fn get_order_table(&self) -> &OrderTable {
-        &self.order_table
-    }
-
-    pub fn get_counters(&self) -> &Counters {
-        &self.counters
-    }
-
-
-    // Setters:
-    pub fn set_elevator(&mut self, node_id: usize, elevator: Elevator) {
-        if elevator != self.elevator_map.elevator[node_id] {
-            self.elevator_map.set(node_id, elevator);
-            self.counters.inc_elevator(node_id);   
-        }
-    }
-
-    pub fn set_peer_availability(&mut self, node_id: usize, available: bool) {
-        if self.peer_availability.set(node_id, available) {
-            self.counters.inc_peer_availability(node_id);
-        }
-    }
-
-    pub fn set_hall_order_state(&mut self, floor: usize, button: Button, state: OrderState) {
-        let hall_order = self.order_table.get_hall_order_mut(floor, button as usize);
-        if hall_order.state == state { return; }
-        hall_order.set_state(state);
-        self.counters.inc_hall_order(floor, button);
-    }
-
-    pub fn set_hall_order_node_id(&mut self, floor: usize, button: Button, node_id: usize) {
-        let hall_order = self.order_table.get_hall_order_mut(floor, button as usize);
-        if hall_order.node_id == node_id { return; }
-        hall_order.set_node_id(node_id);
-        self.counters.inc_hall_order(floor, button);
-    }
-
-    pub fn set_cab_order_state(&mut self, floor: usize, node_id: usize, state: OrderState) {
-        let cab_order = self.order_table.get_cab_order_mut(floor, node_id);
-        if cab_order.state == state { return; }
-        cab_order.set_state(state);
-        self.counters.inc_cab_order(floor, node_id);
-    }
-
-    /// Clear a hall order (served). Resets state/node_id and increments counter
-    /// so peers learn about the completion via the merge protocol.
-    pub fn clear_hall_order(&mut self, floor: usize, button: Button) {
-        self.order_table.get_hall_order_mut(floor, button as usize).clear();
-        self.counters.inc_hall_order(floor, button);
-    }
-
-    /// Clear a cab order (served).
-    pub fn clear_cab_order(&mut self, floor: usize, node_id: usize) {
-        self.order_table.get_cab_order_mut(floor, node_id).clear();
-        self.counters.inc_cab_order(floor, node_id);
-    }
-
-    /// Sync call-button lights with the confirmed order state.
-    /// Hall lights: on when any node has a confirmed hall order at that floor/button.
-    /// Cab lights:  on when this node has a confirmed cab order at that floor.
-    pub fn update_lights(&self, hw: &hw::Elevator) {
-        for floor in 0..N_FLOORS {
-            for btn in [Button::HallUp, Button::HallDown] {
-                let on = self.order_table.get_hall_order(floor, btn as usize).state == OrderState::Confirmed;
-                hw.call_button_light(floor as u8, btn.to_index() as u8, on);
-            }
-            let on = self.order_table.get_cab_order(floor, self.self_id).state == OrderState::Confirmed;
-            hw.call_button_light(floor as u8, Button::Cab.to_index() as u8, on);
-        }
-    }
-
-
-    // --BUTTON PRESS HANDLER --
-    pub fn on_button_press(&mut self, floor: usize, button: Button) {
-        match button {
-            Button::HallUp | Button::HallDown => {
-                self.set_hall_order_state(floor, button, OrderState::Unconfirmed);
-                self.set_hall_order_node_id(floor, button, UNASSIGNED_NODE);
-            }
-            Button::Cab => {
-                self.set_cab_order_state(floor, self.self_id, OrderState::Unconfirmed);
-            }
-        }
-    }
-
-    pub fn is_all_acked(&self, seen_by: &[bool; N_NODES]) -> bool {
-        for (node_id, available) in self.peer_availability.iter() {
-            if available && !seen_by[node_id] {
-                return false;
-            }
-        }
-        true
-    }
-
-    pub fn confirm_and_assign_orders(&mut self) {
-        for floor in 0..N_FLOORS {
-            // HANDLE CAB ORDERS
-            for node_id in 0..N_NODES {
-                let cab_order = self.order_table.get_cab_order(floor, node_id);
-                if cab_order.state == OrderState::Unconfirmed && self.is_all_acked(&cab_order.get_seen_by()) {
-                    self.set_cab_order_state(floor, node_id, OrderState::Confirmed);
-                }
-            }
-
-            // HANDLE HALL ORDERS
-            for button in [Button::HallUp, Button::HallDown] {
-                let hall_order = self.order_table.get_hall_order(floor, button as usize);
-                if hall_order.state == OrderState::Unconfirmed && self.is_all_acked(&hall_order.get_seen_by()) {
-                    self.set_hall_order_state(floor, button, OrderState::Confirmed);
-                }
-            }
-        }
-    }
-    
-
-    pub fn run_world_view(&mut self){
-        //Init func should be called outside.
-
-        //while(1){}
-            //Recieve incoming worldview
-            //Update own world_view using merge_worldviews func()
-
-            //Check for "order to be handled" -->
-            //Poll buttons  + increment state counters
-            //If new order - handle using orders.rs
-            //If stop / obstruction. Update state and pass to fsm to handle states
-            //Increment counters
-            
-            //pass itself as message to network thread?
-            //Send action to fsm
-            //Send action to lights
-    }
-    pub fn merge(&mut self, incoming: &WorldView){
-        //Should be atomic?
-        merge_hall_orders(self, incoming);
-        merge_cab_orders(self, incoming);
-        merge_peer_status(self, incoming);
-        merge_elevator(self, incoming);
-    }
-    pub fn run(
-        mut self,
-        hw: hw::Elevator,
-        from_buttons: cbc::Receiver<ButtonEvent>,
-        from_fsm: cbc::Receiver<Elevator>,
-        from_fsm_completed: cbc::Receiver<CompletedOrder>,
-        from_network: cbc::Receiver<WorldView>,
-        from_assigner: cbc::Receiver<OrderTable>,
-        to_fsm: cbc::Sender<[[bool; N_BUTTONS]; N_FLOORS]>,
-        to_network: cbc::Sender<WorldView>,
-        to_assigner: cbc::Sender<WorldView>,
-    ) {
-        const BROADCAST_INTERVAL: Duration = Duration::from_millis(100);
-        let mut last_broadcast = Instant::now();
-        let mut last_sent_requests = [[false; N_BUTTONS]; N_FLOORS];
-
-        loop {
-            cbc::select! {
-                recv(from_buttons) -> msg => {
-                    let Ok(btn) = msg else { break };
-                    if let Some(button) = Button::from_index(btn.button as usize) {
-                        self.on_button_press(btn.floor as usize, button);
-                    }
-                },
-                recv(from_fsm) -> msg => {
-                    let Ok(elev) = msg else { break };
-                    self.set_elevator(self.self_id, elev);
-                },
-                recv(from_fsm_completed) -> msg => {
-                    let Ok(completed) = msg else { break };
-                    match completed.button {
-                        Button::HallUp | Button::HallDown => {
-                            self.clear_hall_order(completed.floor, completed.button);
-                        }
-                        Button::Cab => {
-                            self.clear_cab_order(completed.floor, self.self_id);
-                        }
-                    }
-                },
-                recv(from_network) -> msg => {
-                    let Ok(peer_wv) = msg else { break };
-                    if peer_wv.self_id != self.self_id {
-                        const PEER_TIMEOUT: Duration = Duration::from_millis(500);
-                        if self.peer_availability.mark_seen(peer_wv.self_id, PEER_TIMEOUT) {
-                            self.counters.inc_peer_availability(peer_wv.self_id);
-                        }
-                        self.merge(&peer_wv);
-                    }
-                },
-                recv(from_assigner) -> msg => {
-                    // Merge node_id assignments from assigner thread.
-                    // Only apply where order is still Confirmed+Unassigned to avoid
-                    // overwriting changes that arrived while the assigner was running.
-                    let Ok(assigned_table) = msg else { break };
-                    for floor in 0..N_FLOORS {
-                        for btn in [Button::HallUp, Button::HallDown] {
-                            let assigned = assigned_table.get_hall_order(floor, btn as usize);
-                            if assigned.node_id == UNASSIGNED_NODE {
-                                continue;
-                            }
-                            let current = self.order_table.get_hall_order(floor, btn as usize);
-                            if current.state == OrderState::Confirmed
-                                && current.node_id == UNASSIGNED_NODE
-                            {
-                                self.set_hall_order_node_id(floor, btn, assigned.node_id);
-                            }
-                        }
-                    }
-                },
-                default(BROADCAST_INTERVAL) => {
-                    // Mark peers as dead if we haven't seen them within the timeout.
-                    for node in 0..N_NODES {
-                        if node == self.self_id {
-                            continue;
-                        }
-                        if self.peer_availability.should_timeout(node) {
-                            self.counters.inc_peer_availability(node);
-                        }
-                    }
-                }
-            }
-
-            // Confirm orders seen by all available peers.
-            self.confirm_and_assign_orders();
-
-            // Sync call-button lights with confirmed order state.
-            self.update_lights(&hw);
-
-            // Push the request table to FSM only when it changes.
-            // Resending an unchanged table causes FSM to re-trigger on_request_button_press
-            // for orders it already cleared locally (but WV hasn't received CompletedOrder yet),
-            // which resets the door timer and locks the elevator in DoorOpen forever.
-            let current_requests = self.get_requests_for_elevator();
-            if current_requests != last_sent_requests {
-                let _ = to_fsm.send(current_requests);
-                last_sent_requests = current_requests;
-            }
-
-            // Feed assigner every iteration — bounded(1) drops if it's still busy,
-            // ensuring it always sees the latest state without queueing stale snapshots.
-            let _ = to_assigner.try_send(self.clone());
-
-            // Rate-limited network broadcast.
-            if last_broadcast.elapsed() >= BROADCAST_INTERVAL {
-                let _ = to_network.send(self.clone());
-                last_broadcast = Instant::now();
-            }
-        }
-    }
-    pub fn get_requests_for_elevator(&self) -> [[bool; N_BUTTONS]; N_FLOORS]{
-        let mut requests = [[false; N_BUTTONS]; N_FLOORS];
-        for floor in 0..N_FLOORS {
-        // Cab calls belong only to self
-        requests[floor][Button::Cab as usize] = 
-        self.order_table.get_cab_order(floor, self.self_id).state == OrderState::Confirmed;
-        
-        // Hall calls assigned to self
-            for btn in [Button::HallUp, Button::HallDown] {
-                let order = &self.order_table.get_hall_order(floor, btn as usize);
-                if order.state == OrderState::Confirmed && order.get_node_id() == self.self_id {
-                    requests[floor][btn as usize] = true;
-                }
-            }
-    }
-    requests
-    }
-}
-
-
-//Helper functions for merging worldviews
-fn merge_hall_orders(local: &mut WorldView, incoming: &WorldView){
-    for floor in 0..N_FLOORS{
-        for button in [Button::HallUp, Button::HallDown]{
-            let local_ct = local.counters.get_hall_order(floor, button);
-            let incoming_ct = incoming.counters.get_hall_order(floor, button);
-            let local_order = local.order_table.get_hall_order_mut(floor, button as usize);
-
-            //Incoming world_view with more recent state
-            if incoming_ct > local_ct {
-                let incoming_order = incoming.order_table.get_hall_order(floor, button as usize);
-                *local_order = incoming_order;
-                local.counters.set_hall_order(floor, button, incoming_ct);
-            }
-
-            else if incoming_ct == local_ct {
-                let incoming_id = incoming.self_id;
-                local_order.set_seen_by(incoming_id);
-            }
-        }
-    }
-}
-
-fn merge_cab_orders(local: &mut WorldView, incoming: &WorldView) {
-    for floor in 0..N_FLOORS {
-        for node_id in 0..N_NODES {
-            let local_ct = local.counters.get_cab_order(floor, node_id);
-            let incoming_ct = incoming.counters.get_cab_order(floor, node_id);
-            let local_order = local.order_table.get_cab_order_mut(floor, node_id);
-
-            if incoming_ct > local_ct {
-                let incoming_order = incoming.order_table.get_cab_order(floor, node_id);
-                *local_order = incoming_order;
-                local.counters.set_cab_order(floor, node_id, incoming_ct);
-            }
-            else if incoming_ct == local_ct {
-                let incoming_id = incoming.self_id;
-                local_order.set_seen_by(incoming_id);
-            }
-        }
-    }
-}
-
-fn merge_peer_status(local: &mut WorldView, incoming: &WorldView) {
-    let incoming_availability = incoming.get_peer_availability();
-    for node in 0..N_NODES {
-        let local_ct = local.counters.get_peer_availability(node);
-        let incoming_ct = incoming.counters.get_peer_availability(node);
-
-        if incoming_ct > local_ct {
-            let is_available: bool = incoming_availability.get(node);
-
-            local.peer_availability.set(node, is_available);
-            local.counters.set_peer_availability(node, incoming_ct);
-        }
-    }
-}
-
-fn merge_elevator(local: &mut WorldView, incoming: &WorldView) {
-    for node in 0..N_NODES {
-        let local_ct = local.counters.get_elevator(node);
-        let incoming_ct = incoming.counters.get_elevator(node);
-        if incoming_ct > local_ct {
-            let incoming_elevator = *incoming.elevator_map.get(node);
-            local.elevator_map.set(node, incoming_elevator);
-            local.counters.set_elevator(node, incoming_ct);
+            peer_monitor: PeerMonitor::new(),
+            order_table:  OrderTable::new(),
+            counters:     Counters::new(),
         }
     }
 }

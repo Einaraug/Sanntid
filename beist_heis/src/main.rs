@@ -2,6 +2,7 @@
 mod elevio;
 mod elev_algo;
 mod world_view;
+mod peer_monitor;
 mod network;
 mod orders;
 mod assigner;
