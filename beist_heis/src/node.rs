@@ -39,8 +39,8 @@ pub fn run(
             recv(from_fsm_state) -> msg => {
                 let Ok(elev) = msg else { break };
                 if elev != *wv.elevator_map.get(wv.self_id) {
-                    wv.elevator_map.set(wv.self_id, elev);
-                    wv.counters.inc_elevator(wv.self_id);
+                    let changes = wv.elevator_map.set(wv.self_id, elev);
+                    wv.counters.apply(changes);
                 }
             },
 

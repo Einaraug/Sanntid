@@ -144,7 +144,7 @@ fn merge_elevators(local: &mut WorldView, incoming: &WorldView) {
 
         if incoming_ct > local_ct {
             let elev = *incoming.elevator_map.get(node);
-            local.elevator_map.set(node, elev);
+            let _ = local.elevator_map.set(node, elev);
             local.counters.set_elevator(node, incoming_ct);
         }
     }
