@@ -1,6 +1,7 @@
 use crate::elev_algo::elevator::*;
 use crate::elevio::elev as hw;
 use crossbeam_channel as cbc;
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Default)]
@@ -41,6 +42,7 @@ impl Elevator {
         orders: cbc::Receiver<[[bool; N_BUTTONS]; N_FLOORS]>,
         to_wv: cbc::Sender<Elevator>,
         to_wv_completed: cbc::Sender<CompletedOrder>,
+        paused: Arc<AtomicBool>,
     ) {
         let door_duration = Duration::from_secs_f64(self.door_open_duration_s);
         let mut timer: Option<Instant> = None;
@@ -71,8 +73,15 @@ impl Elevator {
                             self = new_self;
                             output
                         }
-                        SensorEvent::Obstruction(_on) => {
-                            // TODO: handle obstruction
+                        SensorEvent::Obstruction(on) => {
+                            paused.store(on, Ordering::Relaxed);
+                            if on {
+                                // Block door from closing — cancel the timer
+                                timer = None;
+                            } else if self.behaviour == Behaviour::DoorOpen {
+                                // Obstruction cleared while door open — restart timer
+                                timer = Some(Instant::now() + door_duration);
+                            }
                             FsmOutput::new()
                         }
                         SensorEvent::StopButton(_on) => {
@@ -118,7 +127,7 @@ impl Elevator {
             // Relying on default(timeout) alone fails when the orders channel is
             // continuously fed by WV, preventing default from ever firing.
             if let Some(deadline) = timer {
-                if Instant::now() >= deadline {
+                if !paused.load(Ordering::Relaxed) && Instant::now() >= deadline {
                     timer = None;
                     let (new_self, output) = self.on_door_timeout();
                     self = new_self;

@@ -6,6 +6,7 @@ use crate::orders::{OrderState, OrderTable, UNASSIGNED_NODE};
 use crate::world_view::{WorldView, N_NODES};
 use crate::counters;
 use crossbeam_channel as cbc;
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::time::{Duration, Instant};
 
 const PEER_TIMEOUT:       Duration = Duration::from_millis(500);
@@ -22,6 +23,7 @@ pub fn run(
     to_fsm:             cbc::Sender<[[bool; N_BUTTONS]; N_FLOORS]>,
     to_network:         cbc::Sender<WorldView>,
     to_assigner:        cbc::Sender<WorldView>,
+    paused:             Arc<AtomicBool>,
 ) {
     let mut last_broadcast     = Instant::now();
     let mut last_peer_check    = Instant::now();
@@ -100,17 +102,19 @@ pub fn run(
 
         update_lights(&wv, &hw);
 
-        let requests = wv.order_table.convert_to_requests(wv.self_id);
-        if requests != last_sent_requests {
-            let _ = to_fsm.send(requests);
-            last_sent_requests = requests;
-        }
+        if !paused.load(Ordering::Relaxed) {
+            let requests = wv.order_table.convert_to_requests(wv.self_id);
+            if requests != last_sent_requests {
+                let _ = to_fsm.send(requests);
+                last_sent_requests = requests;
+            }
 
-        let _ = to_assigner.try_send(wv.clone());
+            let _ = to_assigner.try_send(wv.clone());
 
-        if last_broadcast.elapsed() >= BROADCAST_INTERVAL {
-            let _ = to_network.send(wv.clone());
-            last_broadcast = Instant::now();
+            if last_broadcast.elapsed() >= BROADCAST_INTERVAL {
+                let _ = to_network.send(wv.clone());
+                last_broadcast = Instant::now();
+            }
         }
     }
 }

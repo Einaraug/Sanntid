@@ -17,6 +17,7 @@ use elev_algo::elevator::{Button, N_BUTTONS, N_FLOORS};
 use world_view::WorldView;
 use orders::OrderTable;
 use crossbeam_channel as cbc;
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::thread;
 use std::time::Duration;
 
@@ -64,6 +65,9 @@ fn main() {
     // assigner → worldview (assigned OrderTable)
     let (from_assigner_tx, from_assigner_rx) = cbc::unbounded::<OrderTable>();
 
+    // Shared obstruction flag: FSM writes, node reads
+    let paused = Arc::new(AtomicBool::new(false));
+
     // ═══════════════════════════════════════════════════════════════
     // Thread 1: hw_poll_buttons → WorldView
     // ═══════════════════════════════════════════════════════════════
@@ -81,13 +85,15 @@ fn main() {
     // ═══════════════════════════════════════════════════════════════
     let hw3 = hw_elev.clone();
     let wv = WorldView::new(self_id);
-    thread::spawn(move || node::run(wv, hw3, btn_rx, from_net_rx, state_rx, completed_rx, from_assigner_rx, order_tx, to_net_tx, to_assigner_tx));
+    let paused_node = paused.clone();
+    thread::spawn(move || node::run(wv, hw3, btn_rx, from_net_rx, state_rx, completed_rx, from_assigner_rx, order_tx, to_net_tx, to_assigner_tx, paused_node));
 
     // ═══════════════════════════════════════════════════════════════
     // Thread 4: FSM
     // ═══════════════════════════════════════════════════════════════
     let fsm = Elevator::new();
-    thread::spawn(move || fsm.run(hw_elev, sensor_rx, order_rx, state_tx, completed_tx));
+    let paused_fsm = paused.clone();
+    thread::spawn(move || fsm.run(hw_elev, sensor_rx, order_rx, state_tx, completed_tx, paused_fsm));
 
     // ═══════════════════════════════════════════════════════════════
     // Thread 5: Hall request assigner
