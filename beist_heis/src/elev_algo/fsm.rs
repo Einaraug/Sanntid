@@ -282,15 +282,10 @@ impl Elevator {
         e.floor = new_floor;
         output.floor_indicator = Some(new_floor);
 
-        // Recovering from motor failure: stop at first floor reached, go Idle.
-        // Orders were already unassigned by node when stuck was set.
-        if e.stuck {
-            output.motor_direction = Some(Dirn::Stop);
-            e.dirn = Dirn::Stop;
-            e.behaviour = Behaviour::Idle;
-            e.stuck = false;
-            return (e, output);
-        }
+        // Recovering from motor failure: clear stuck and fall through to normal logic.
+        // The elevator is still Moving, so should_stop() will handle stopping at the
+        // right floor. Forcing Idle here would strand any remaining requests.
+        e.stuck = false;
 
         if e.behaviour == Behaviour::Moving && e.should_stop() {
             output.motor_direction = Some(Dirn::Stop);

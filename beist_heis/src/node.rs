@@ -80,6 +80,7 @@ pub fn run(
                         if a.node_id == wv.self_id
                             && c.state == OrderState::Confirmed
                             && c.node_id == UNASSIGNED_NODE
+                            && !wv.elevator_map.get(wv.self_id).stuck
                         {
                             let changes = wv.order_table.assign_node_id(floor, btn, a.node_id);
                             wv.counters.apply(changes);
