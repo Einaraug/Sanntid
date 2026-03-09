@@ -24,6 +24,7 @@ pub fn run(
     to_assigner:        cbc::Sender<WorldView>,
 ) {
     let mut last_broadcast     = Instant::now();
+    let mut last_peer_check    = Instant::now();
     let mut last_sent_requests = [[false; N_BUTTONS]; N_FLOORS];
 
     loop {
@@ -81,18 +82,21 @@ pub fn run(
                 }
             },
 
-            default(BROADCAST_INTERVAL) => {
-                let (dead, changes) = wv.peer_monitor.expire_stale_peers();
-                wv.counters.apply(changes);
-                for node_id in dead {
-                    let changes = wv.order_table.unassign_orders_for(node_id);
-                    wv.counters.apply(changes);
-                }
-            }
+            default(BROADCAST_INTERVAL) => {}
         }
 
         let changes = wv.order_table.try_confirm_orders(&wv.peer_monitor.availability);
         wv.counters.apply(changes);
+
+        if last_peer_check.elapsed() >= PEER_TIMEOUT {
+            let (dead, changes) = wv.peer_monitor.expire_stale_peers();
+            wv.counters.apply(changes);
+            for node_id in dead {
+                let changes = wv.order_table.unassign_orders_for(node_id);
+                wv.counters.apply(changes);
+            }
+            last_peer_check = Instant::now();
+        }
 
         update_lights(&wv, &hw);
 
