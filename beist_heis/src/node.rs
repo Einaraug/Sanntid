@@ -6,7 +6,6 @@ use crate::orders::{OrderState, OrderTable, UNASSIGNED_NODE};
 use crate::world_view::{WorldView, N_NODES};
 use crate::counters;
 use crossbeam_channel as cbc;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::time::{Duration, Instant};
 
 const PEER_TIMEOUT:       Duration = Duration::from_millis(500);
@@ -23,7 +22,6 @@ pub fn run(
     to_fsm:             cbc::Sender<[[bool; N_BUTTONS]; N_FLOORS]>,
     to_network:         cbc::Sender<WorldView>,
     to_assigner:        cbc::Sender<WorldView>,
-    paused:             Arc<AtomicBool>,
 ) {
     let mut last_broadcast     = Instant::now();
     let mut last_peer_check    = Instant::now();
@@ -41,8 +39,14 @@ pub fn run(
 
             recv(from_fsm_state) -> msg => {
                 let Ok(elev) = msg else { break };
+                let was_stuck = wv.elevator_map.get(wv.self_id).stuck;
                 if elev != *wv.elevator_map.get(wv.self_id) {
                     let changes = wv.elevator_map.set(wv.self_id, elev);
+                    wv.counters.apply(changes);
+                }
+                // Newly stuck: unassign our orders so other elevators pick them up
+                if elev.stuck && !was_stuck {
+                    let changes = wv.order_table.unassign_orders_for(wv.self_id);
                     wv.counters.apply(changes);
                 }
             },
@@ -102,19 +106,17 @@ pub fn run(
 
         update_lights(&wv, &hw);
 
-        if !paused.load(Ordering::Relaxed) {
-            let requests = wv.order_table.convert_to_requests(wv.self_id);
-            if requests != last_sent_requests {
-                let _ = to_fsm.send(requests);
-                last_sent_requests = requests;
-            }
+        let requests = wv.order_table.convert_to_requests(wv.self_id);
+        if requests != last_sent_requests {
+            let _ = to_fsm.send(requests);
+            last_sent_requests = requests;
+        }
 
-            let _ = to_assigner.try_send(wv.clone());
+        let _ = to_assigner.try_send(wv.clone());
 
-            if last_broadcast.elapsed() >= BROADCAST_INTERVAL {
-                let _ = to_network.send(wv.clone());
-                last_broadcast = Instant::now();
-            }
+        if last_broadcast.elapsed() >= BROADCAST_INTERVAL {
+            let _ = to_network.send(wv.clone());
+            last_broadcast = Instant::now();
         }
     }
 }

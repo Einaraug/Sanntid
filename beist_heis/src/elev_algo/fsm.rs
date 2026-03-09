@@ -1,8 +1,9 @@
 use crate::elev_algo::elevator::*;
 use crate::elevio::elev as hw;
 use crossbeam_channel as cbc;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::time::{Duration, Instant};
+
+const MOTOR_TIMEOUT: Duration = Duration::from_secs(4);
 
 #[derive(Debug, Clone, Default)]
 pub struct FsmOutput {
@@ -42,10 +43,10 @@ impl Elevator {
         orders: cbc::Receiver<[[bool; N_BUTTONS]; N_FLOORS]>,
         to_wv: cbc::Sender<Elevator>,
         to_wv_completed: cbc::Sender<CompletedOrder>,
-        paused: Arc<AtomicBool>,
     ) {
         let door_duration = Duration::from_secs_f64(self.door_open_duration_s);
-        let mut timer: Option<Instant> = None;
+        let mut door_timer: Option<Instant> = None;
+        let mut motor_watchdog: Option<Instant> = None;
         let mut last_sent = self.clone();
 
         // Init: go down if between floors
@@ -56,10 +57,12 @@ impl Elevator {
         }
 
         loop {
-            // Wake up at least when the door timer would expire.
-            // Keep it short so the timer fires promptly even if orders messages keep arriving.
-            let select_timeout = timer
-                .map(|deadline| deadline.saturating_duration_since(Instant::now()))
+            // Wake up at least when the soonest timer would expire.
+            let select_timeout = [door_timer, motor_watchdog]
+                .into_iter()
+                .flatten()
+                .map(|d| d.saturating_duration_since(Instant::now()))
+                .min()
                 .unwrap_or(Duration::from_millis(100));
 
             let before = self.requests;
@@ -69,18 +72,20 @@ impl Elevator {
                     let Ok(event) = msg else { break };
                     let output = match event {
                         SensorEvent::FloorArrival(floor) => {
+                            // Motor is working — reset watchdog
+                            motor_watchdog = None;
                             let (new_self, output) = self.on_floor_arrival(floor as i32);
                             self = new_self;
                             output
                         }
                         SensorEvent::Obstruction(on) => {
-                            paused.store(on, Ordering::Relaxed);
+                            self.stuck = on;
                             if on {
-                                // Block door from closing — cancel the timer
-                                timer = None;
+                                // Block door from closing — cancel door timer
+                                door_timer = None;
                             } else if self.behaviour == Behaviour::DoorOpen {
                                 // Obstruction cleared while door open — restart timer
-                                timer = Some(Instant::now() + door_duration);
+                                door_timer = Some(Instant::now() + door_duration);
                             }
                             FsmOutput::new()
                         }
@@ -91,7 +96,12 @@ impl Elevator {
                     };
                     self.apply_output(&hw, &output);
                     if output.start_door_timer {
-                        timer = Some(Instant::now() + door_duration);
+                        door_timer = Some(Instant::now() + door_duration);
+                    }
+                    if matches!(output.motor_direction, Some(Dirn::Up) | Some(Dirn::Down)) {
+                        motor_watchdog = Some(Instant::now() + MOTOR_TIMEOUT);
+                    } else if matches!(output.motor_direction, Some(Dirn::Stop)) {
+                        motor_watchdog = None;
                     }
                 },
                 recv(orders) -> msg => {
@@ -105,7 +115,12 @@ impl Elevator {
                                     self = new_self;
                                     self.apply_output(&hw, &output);
                                     if output.start_door_timer {
-                                        timer = Some(Instant::now() + door_duration);
+                                        door_timer = Some(Instant::now() + door_duration);
+                                    }
+                                    if matches!(output.motor_direction, Some(Dirn::Up) | Some(Dirn::Down)) {
+                                        motor_watchdog = Some(Instant::now() + MOTOR_TIMEOUT);
+                                    } else if matches!(output.motor_direction, Some(Dirn::Stop)) {
+                                        motor_watchdog = None;
                                     }
                                     // When a request is immediately served (elevator already at
                                     // that floor), self.requests goes false→true→false in one
@@ -126,15 +141,30 @@ impl Elevator {
             // Check door timer after every event, not just in the default arm.
             // Relying on default(timeout) alone fails when the orders channel is
             // continuously fed by WV, preventing default from ever firing.
-            if let Some(deadline) = timer {
-                if !paused.load(Ordering::Relaxed) && Instant::now() >= deadline {
-                    timer = None;
+            // Door timer does not fire while stuck (obstruction).
+            if let Some(deadline) = door_timer {
+                if !self.stuck && Instant::now() >= deadline {
+                    door_timer = None;
                     let (new_self, output) = self.on_door_timeout();
                     self = new_self;
                     self.apply_output(&hw, &output);
                     if output.start_door_timer {
-                        timer = Some(Instant::now() + door_duration);
+                        door_timer = Some(Instant::now() + door_duration);
                     }
+                    if matches!(output.motor_direction, Some(Dirn::Up) | Some(Dirn::Down)) {
+                        motor_watchdog = Some(Instant::now() + MOTOR_TIMEOUT);
+                    } else if matches!(output.motor_direction, Some(Dirn::Stop)) {
+                        motor_watchdog = None;
+                    }
+                }
+            }
+
+            // Motor watchdog: if elevator was commanded to move but floor sensor never fired,
+            // declare motor failure. Keep motor direction so recovery is automatic on power return.
+            if let Some(deadline) = motor_watchdog {
+                if Instant::now() >= deadline {
+                    motor_watchdog = None;
+                    self.stuck = true;
                 }
             }
 
@@ -251,6 +281,16 @@ impl Elevator {
 
         e.floor = new_floor;
         output.floor_indicator = Some(new_floor);
+
+        // Recovering from motor failure: stop at first floor reached, go Idle.
+        // Orders were already unassigned by node when stuck was set.
+        if e.stuck {
+            output.motor_direction = Some(Dirn::Stop);
+            e.dirn = Dirn::Stop;
+            e.behaviour = Behaviour::Idle;
+            e.stuck = false;
+            return (e, output);
+        }
 
         if e.behaviour == Behaviour::Moving && e.should_stop() {
             output.motor_direction = Some(Dirn::Stop);

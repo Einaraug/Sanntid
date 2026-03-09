@@ -57,6 +57,8 @@ pub struct Elevator {
     pub requests: [[bool; N_BUTTONS]; N_FLOORS],
     pub behaviour: Behaviour,
     pub door_open_duration_s: f64,
+    #[serde(default)]
+    pub stuck: bool,
 }
 
 impl Elevator {
@@ -67,6 +69,7 @@ impl Elevator {
             requests: [[false; N_BUTTONS]; N_FLOORS],
             behaviour: Behaviour::Idle,
             door_open_duration_s: 1.5,
+            stuck: false,
         }
     }
 }

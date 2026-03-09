@@ -34,7 +34,7 @@ fn build_input(wv: &WorldView) -> AssignerInput {
     ]);
     let self_id = wv.self_id;
     let states = (0..N_NODES)
-        .filter(|&id| id == self_id || wv.peer_monitor.is_available(id))
+        .filter(|&id| !wv.elevator_map.get(id).stuck && (id == self_id || wv.peer_monitor.is_available(id)))
         .map(|id| {
             let e = wv.elevator_map.get(id);
             let direction = match (e.floor, e.dirn) {
