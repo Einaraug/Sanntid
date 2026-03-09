@@ -1,6 +1,6 @@
 use crate::elev_algo::elevator::{Button, N_FLOORS, N_BUTTONS};
 use crate::world_view::N_NODES;
-use crate::counters::Counters;
+use crate::counters::Change;
 use serde::{Serialize, Deserialize};
 
 pub const UNASSIGNED_NODE: usize = 100;
@@ -91,48 +91,51 @@ impl OrderTable {
 
     // ── Order lifecycle (include counter increments) ───────────────────────────
 
-    pub fn on_button_press(&mut self, floor: usize, button: Button, self_id: usize, counters: &mut Counters) {
+    pub fn on_button_press(&mut self, floor: usize, button: Button, self_id: usize) -> Vec<Change> {
         match button {
             Button::HallUp | Button::HallDown => {
                 self.set_hall_order_state(floor, button, OrderState::Unconfirmed);
                 self.set_hall_order_node_id(floor, button, UNASSIGNED_NODE);
-                counters.inc_hall_order(floor, button);
+                vec![Change::HallOrder { floor, button }]
             }
             Button::Cab => {
                 self.set_cab_order_state(floor, self_id, OrderState::Unconfirmed);
-                counters.inc_cab_order(floor, self_id);
+                vec![Change::CabOrder { floor, node_id: self_id }]
             }
         }
     }
 
-    pub fn clear_hall_order(&mut self, floor: usize, button: Button, counters: &mut Counters) {
+    pub fn clear_hall_order(&mut self, floor: usize, button: Button) -> Vec<Change> {
         self.hall[floor][button.to_index()] = HallOrder::new();
-        counters.inc_hall_order(floor, button);
+        vec![Change::HallOrder { floor, button }]
     }
 
-    pub fn clear_cab_order(&mut self, floor: usize, node_id: usize, counters: &mut Counters) {
+    pub fn clear_cab_order(&mut self, floor: usize, node_id: usize) -> Vec<Change> {
         self.cab[floor][node_id] = CabOrder::new();
-        counters.inc_cab_order(floor, node_id);
+        vec![Change::CabOrder { floor, node_id }]
     }
 
-    pub fn assign_node_id(&mut self, floor: usize, btn: Button, node_id: usize, counters: &mut Counters) {
+    pub fn assign_node_id(&mut self, floor: usize, btn: Button, node_id: usize) -> Vec<Change> {
         self.set_hall_order_node_id(floor, btn, node_id);
-        counters.inc_hall_order(floor, btn);
+        vec![Change::HallOrder { floor, button: btn }]
     }
 
-    pub fn unassign_orders_for(&mut self, node_id: usize, counters: &mut Counters) {
+    pub fn unassign_orders_for(&mut self, node_id: usize) -> Vec<Change> {
+        let mut changes = Vec::new();
         for floor in 0..N_FLOORS {
             for btn in [Button::HallUp, Button::HallDown] {
                 let order = self.hall[floor][btn.to_index()];
                 if order.node_id == node_id && order.state == OrderState::Confirmed {
                     self.set_hall_order_node_id(floor, btn, UNASSIGNED_NODE);
-                    counters.inc_hall_order(floor, btn);
+                    changes.push(Change::HallOrder { floor, button: btn });
                 }
             }
         }
+        changes
     }
 
-    pub fn try_confirm_orders(&mut self, peer_availability: &[bool; N_NODES], counters: &mut Counters) {
+    pub fn try_confirm_orders(&mut self, peer_availability: &[bool; N_NODES]) -> Vec<Change> {
+        let mut changes = Vec::new();
         for floor in 0..N_FLOORS {
             for node_id in 0..N_NODES {
                 let cab = self.cab[floor][node_id];
@@ -140,7 +143,7 @@ impl OrderTable {
                     && is_all_acked(&cab.seen_by, peer_availability)
                 {
                     self.set_cab_order_state(floor, node_id, OrderState::Confirmed);
-                    counters.inc_cab_order(floor, node_id);
+                    changes.push(Change::CabOrder { floor, node_id });
                 }
             }
             for btn in [Button::HallUp, Button::HallDown] {
@@ -149,10 +152,11 @@ impl OrderTable {
                     && is_all_acked(&hall.seen_by, peer_availability)
                 {
                     self.set_hall_order_state(floor, btn, OrderState::Confirmed);
-                    counters.inc_hall_order(floor, btn);
+                    changes.push(Change::HallOrder { floor, button: btn });
                 }
             }
         }
+        changes
     }
 
     // ── Pure computation ──────────────────────────────────────────────────────

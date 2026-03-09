@@ -2,6 +2,13 @@ use serde::{Serialize, Deserialize};
 use crate::elev_algo::elevator::{Button, N_FLOORS};
 use crate::world_view::{WorldView, N_NODES};
 
+pub enum Change {
+    HallOrder { floor: usize, button: Button },
+    CabOrder  { floor: usize, node_id: usize },
+    Elevator  { node_id: usize },
+    PeerAvail { node_id: usize },
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Counters {
     hall_order:        [[u64; 2]; N_FLOORS],
@@ -60,6 +67,17 @@ impl Counters {
     }
     pub fn set_elevator(&mut self, node_id: usize, value: u64) {
         self.elevator[node_id] = value;
+    }
+
+    pub fn apply(&mut self, changes: Vec<Change>) {
+        for change in changes {
+            match change {
+                Change::HallOrder { floor, button }  => self.inc_hall_order(floor, button),
+                Change::CabOrder  { floor, node_id } => self.inc_cab_order(floor, node_id),
+                Change::Elevator  { node_id }        => self.inc_elevator(node_id),
+                Change::PeerAvail { node_id }        => self.inc_peer_availability(node_id),
+            }
+        }
     }
 }
 

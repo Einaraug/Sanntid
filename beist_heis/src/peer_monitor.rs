@@ -1,5 +1,5 @@
 use crate::elev_algo::timer::Timer;
-use crate::counters::Counters;
+use crate::counters::Change;
 use crate::world_view::N_NODES;
 use serde::{Serialize, Deserialize};
 use std::time::Duration;
@@ -24,27 +24,25 @@ impl PeerMonitor {
     }
 
     /// Called when a message from node_id is received.
-    /// Increments counter if peer flipped unavailable → available.
-    pub fn mark_seen(&mut self, node_id: usize, timeout: Duration, counters: &mut Counters) {
+    /// Returns a Change if peer flipped unavailable → available.
+    pub fn mark_seen(&mut self, node_id: usize, timeout: Duration) -> Vec<Change> {
         let flipped = self.set(node_id, true);
         self.timers[node_id].start(timeout.as_secs_f64());
-        if flipped {
-            counters.inc_peer_availability(node_id);
-        }
+        if flipped { vec![Change::PeerAvail { node_id }] } else { vec![] }
     }
 
-    /// Check all nodes for timeout. Returns list of node_ids that just died.
-    /// Increments counter for each transition available → unavailable.
-    pub fn expire_stale_peers(&mut self, counters: &mut Counters) -> Vec<usize> {
+    /// Check all nodes for timeout. Returns (dead node_ids, changes).
+    pub fn expire_stale_peers(&mut self) -> (Vec<usize>, Vec<Change>) {
         let mut dead = Vec::new();
+        let mut changes = Vec::new();
         for node_id in 0..N_NODES {
             if self.availability[node_id] && self.timers[node_id].timed_out() {
                 self.availability[node_id] = false;
-                counters.inc_peer_availability(node_id);
+                changes.push(Change::PeerAvail { node_id });
                 dead.push(node_id);
             }
         }
-        dead
+        (dead, changes)
     }
 
     /// Set availability for a node. Returns true if value flipped.
