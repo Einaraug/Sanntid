@@ -26,17 +26,17 @@ struct ElevatorStateDto {
 type BinaryOutput = HashMap<String, [[bool; 3]; N_FLOORS]>;
 
 fn build_input(wv: &WorldView) -> AssignerInput {
-    let ot = wv.get_order_table();
+    let ot = &wv.order_table;
     // Only include orders where state == Confirmed AND node_id == UNASSIGNED_NODE
     let hall_requests = std::array::from_fn(|floor| [
         ot.hall[floor][0].state == OrderState::Confirmed && ot.hall[floor][0].node_id == UNASSIGNED_NODE,
         ot.hall[floor][1].state == OrderState::Confirmed && ot.hall[floor][1].node_id == UNASSIGNED_NODE,
     ]);
-    let self_id = *wv.get_self_id();
+    let self_id = wv.self_id;
     let states = (0..N_NODES)
-        .filter(|&id| id == self_id || wv.get_peer_availability().get(id))
+        .filter(|&id| id == self_id || wv.peer_monitor.is_available(id))
         .map(|id| {
-            let e = wv.get_elevator_map().get(id);
+            let e = wv.elevator_map.get(id);
             (id.to_string(), ElevatorStateDto {
                 behaviour: e.behaviour,
                 floor: e.floor,
@@ -71,8 +71,8 @@ pub fn assign_hall_requests(
     }
 
     let binary_output: BinaryOutput = serde_json::from_slice(&output.stdout)?;
-    let mut order_table = wv.get_order_table().clone();
-    process_assigner_output(*wv.get_self_id(), &binary_output, &mut order_table);
+    let mut order_table = wv.order_table.clone();
+    process_assigner_output(wv.self_id, &binary_output, &mut order_table);
     Ok(order_table)
 }
 
@@ -94,7 +94,7 @@ pub fn process_assigner_output(
         for floor in 0..N_FLOORS {
             for btn in 0..2 {
                 if node_orders[floor][btn] {
-                    order_table.get_hall_order_mut(floor, btn).set_node_id(self_id);
+                    order_table.hall[floor][btn].node_id = self_id;
                 }
             }
         }
@@ -111,15 +111,15 @@ mod tests {
         let mut wv = WorldView::new(0);
 
         // Set up: floor 0 HallUp = Confirmed + UNASSIGNED (should include)
-        wv.set_hall_order_state(0, Button::HallUp, OrderState::Confirmed);
+        wv.order_table.set_hall_order_state(0, Button::HallUp, OrderState::Confirmed);
         // node_id defaults to UNASSIGNED_NODE
 
         // Set up: floor 1 HallDown = Confirmed but assigned to node 1 (should exclude)
-        wv.set_hall_order_state(1, Button::HallDown, OrderState::Confirmed);
-        wv.set_hall_order_node_id(1, Button::HallDown, 1);
+        wv.order_table.set_hall_order_state(1, Button::HallDown, OrderState::Confirmed);
+        wv.order_table.set_hall_order_node_id(1, Button::HallDown, 1);
 
         // Set up: floor 2 HallUp = Unconfirmed + UNASSIGNED (should exclude)
-        wv.set_hall_order_state(2, Button::HallUp, OrderState::Unconfirmed);
+        wv.order_table.set_hall_order_state(2, Button::HallUp, OrderState::Unconfirmed);
 
         let input = build_input(&wv);
 
