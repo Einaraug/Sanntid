@@ -96,10 +96,12 @@ impl OrderTable {
             Button::HallUp | Button::HallDown => {
                 self.set_hall_order_state(floor, button, OrderState::Unconfirmed);
                 self.set_hall_order_node_id(floor, button, UNASSIGNED_NODE);
+                self.set_seen_by_hall(floor, button, self_id);
                 vec![Change::HallOrder { floor, button }]
             }
             Button::Cab => {
                 self.set_cab_order_state(floor, self_id, OrderState::Unconfirmed);
+                self.set_seen_by_cab(floor, self_id, self_id);
                 vec![Change::CabOrder { floor, node_id: self_id }]
             }
         }

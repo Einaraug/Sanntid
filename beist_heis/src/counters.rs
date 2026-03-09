@@ -99,9 +99,11 @@ fn merge_hall_orders(local: &mut WorldView, incoming: &WorldView) {
             if incoming_ct > local_ct {
                 let order = incoming.order_table.get_hall_order(floor, btn.to_index());
                 local.order_table.replace_hall_order(floor, btn, order);
+                local.order_table.set_seen_by_hall(floor, btn, local.self_id);
                 local.counters.set_hall_order(floor, btn, incoming_ct);
             } else if incoming_ct == local_ct {
                 local.order_table.set_seen_by_hall(floor, btn, incoming.self_id);
+                local.order_table.set_seen_by_hall(floor, btn, local.self_id);
             }
         }
     }
@@ -116,9 +118,11 @@ fn merge_cab_orders(local: &mut WorldView, incoming: &WorldView) {
             if incoming_ct > local_ct {
                 let order = incoming.order_table.get_cab_order(floor, node_id);
                 local.order_table.replace_cab_order(floor, node_id, order);
+                local.order_table.set_seen_by_cab(floor, node_id, local.self_id);
                 local.counters.set_cab_order(floor, node_id, incoming_ct);
             } else if incoming_ct == local_ct {
                 local.order_table.set_seen_by_cab(floor, node_id, incoming.self_id);
+                local.order_table.set_seen_by_cab(floor, node_id, local.self_id);
             }
         }
     }
