@@ -28,7 +28,7 @@ impl PeerMonitor {
     pub fn mark_seen(&mut self, node_id: usize, timeout: Duration) -> Vec<Change> {
         let flipped = self.set(node_id, true);
         self.timers[node_id].start(timeout.as_secs_f64());
-        if flipped { vec![Change::PeerAvail { node_id }] } else { vec![] }
+        if flipped { vec![Change::PeerAvailability { node_id }] } else { vec![] }
     }
 
     /// Check all nodes for timeout. Returns (dead node_ids, changes).
@@ -38,7 +38,7 @@ impl PeerMonitor {
         for node_id in 0..N_NODES {
             if self.availability[node_id] && self.timers[node_id].timed_out() {
                 self.availability[node_id] = false;
-                changes.push(Change::PeerAvail { node_id });
+                changes.push(Change::PeerAvailability { node_id });
                 dead.push(node_id);
             }
         }

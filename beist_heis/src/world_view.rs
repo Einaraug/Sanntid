@@ -5,6 +5,8 @@ use crate::peer_monitor::PeerMonitor;
 use serde::{Serialize, Deserialize};
 
 pub const N_NODES: usize = 3;
+pub const N_DIRS: usize = 2;
+
 
 // ── ElevatorMap ───────────────────────────────────────────────────────────────
 

@@ -32,7 +32,7 @@ pub fn run(
             recv(from_buttons) -> msg => {
                 let Ok(btn) = msg else { break };
                 if let Some(button) = Button::from_index(btn.button as usize) {
-                    let changes = wv.order_table.on_button_press(btn.floor as usize, button, wv.self_id);
+                    let changes = wv.order_table.on_btn_press(btn.floor as usize, button, wv.self_id);
                     wv.counters.apply(changes);
                 }
             },
