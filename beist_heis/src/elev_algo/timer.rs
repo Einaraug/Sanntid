@@ -17,10 +17,6 @@ impl Timer {
         self.end_time = Some(Instant::now() + Duration::from_secs_f64(duration_secs));
     }
 
-    pub fn stop(&mut self) {
-        self.end_time = None;
-    }
-
     pub fn timed_out(&self) -> bool {
         match self.end_time {
             Some(end) => Instant::now() > end,

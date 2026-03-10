@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 use std::process::{Command, Stdio};
-use std::fs;
 use serde::Serialize;
 use crate::world_view::*;
-use crate::elev_algo::elevator::{N_FLOORS, Dirn, Behaviour, Button};
+use crate::elev_algo::elevator::{N_FLOORS, Dirn, Behaviour};
 use crate::orders::{OrderState, OrderTable, UNASSIGNED_NODE};
 
 
@@ -88,12 +87,6 @@ pub fn assign_hall_requests(
     let mut order_table = wv.order_table.clone();
     process_assigner_output(wv.self_id, &binary_output, &mut order_table);
     Ok(order_table)
-}
-
-pub fn save_assigner_input(wv: &WorldView, path: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let input = build_input(wv);
-    fs::write(path, serde_json::to_string_pretty(&input)?)?;
-    Ok(())
 }
 
 /// Apply the assigner's binary output to `order_table` for `self_id` only.

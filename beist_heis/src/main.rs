@@ -1,4 +1,3 @@
-#![allow(dead_code, unused_imports)]
 mod elevio;
 mod elev_algo;
 mod world_view;
@@ -13,7 +12,7 @@ use elevio::elev as hw;
 use elevio::poll::{self, ButtonEvent};
 use elev_algo::elevator::Elevator;
 use elev_algo::fsm::{SensorEvent, CompletedOrder};
-use elev_algo::elevator::{Button, N_BUTTONS, N_FLOORS};
+use elev_algo::elevator::{N_BUTTONS, N_FLOORS};
 use world_view::WorldView;
 use orders::OrderTable;
 use crossbeam_channel as cbc;

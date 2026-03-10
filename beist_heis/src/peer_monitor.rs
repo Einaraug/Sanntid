@@ -55,7 +55,4 @@ impl PeerMonitor {
         false
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (usize, bool)> {
-        self.availability.iter().copied().enumerate()
-    }
 }

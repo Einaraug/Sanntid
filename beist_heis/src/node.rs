@@ -3,7 +3,7 @@ use crate::elev_algo::fsm::CompletedOrder;
 use crate::elevio::elev as hw;
 use crate::elevio::poll::ButtonEvent;
 use crate::orders::{OrderState, OrderTable, UNASSIGNED_NODE};
-use crate::world_view::{WorldView, N_NODES};
+use crate::world_view::WorldView;
 use crate::counters;
 use crossbeam_channel as cbc;
 use std::time::{Duration, Instant};
