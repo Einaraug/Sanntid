@@ -48,6 +48,9 @@ impl Elevator {
         let mut door_timer: Option<Instant> = None;
         let mut motor_watchdog: Option<Instant> = None;
         let mut last_sent = self.clone();
+        // Tracks obstruction switch state locally — does NOT propagate to WV/stuck flag,
+        // so orders are never redistributed due to an obstruction alone.
+        let mut obstructed = false;
 
         // Init: go down if between floors
         if hw.floor_sensor().is_none() {
@@ -55,6 +58,8 @@ impl Elevator {
             self = new_self;
             self.apply_output(&hw, &output);
         }
+        // Always turn the door lamp off on startup; it may be stale from before a crash.
+        hw.door_light(false);
 
         loop {
             // Wake up at least when the soonest timer would expire.
@@ -79,9 +84,11 @@ impl Elevator {
                             output
                         }
                         SensorEvent::Obstruction(on) => {
-                            self.stuck = on;
+                            obstructed = on;
                             if on {
-                                // Block door from closing — cancel door timer
+                                // Block door from closing — cancel door timer.
+                                // Intentionally do NOT set self.stuck here: that flag is
+                                // reserved for motor failure and causes order redistribution.
                                 door_timer = None;
                             } else if self.behaviour == Behaviour::DoorOpen {
                                 // Obstruction cleared while door open — restart timer
@@ -150,7 +157,7 @@ impl Elevator {
             // continuously fed by WV, preventing default from ever firing.
             // Door timer does not fire while stuck (obstruction).
             if let Some(deadline) = door_timer {
-                if !self.stuck && Instant::now() >= deadline {
+                if !obstructed && Instant::now() >= deadline {
                     door_timer = None;
                     let (new_self, output) = self.on_door_timeout();
                     self = new_self;

@@ -42,11 +42,20 @@ fn build_input(wv: &WorldView) -> AssignerInput {
                 (f, Dirn::Up) if f == N_FLOORS as i32 - 1         => Dirn::Stop,
                 _                                                  => e.dirn,
             };
+            // Include already-assigned hall orders as if they were cab requests so the
+            // cost function sees the full load each elevator is carrying.  Without this
+            // the binary treats an elevator that already owns hall orders as if it were
+            // empty, causing all redistributed orders to pile onto the same elevator.
+            let cab_requests = std::array::from_fn(|floor| {
+                e.requests[floor][2]
+                    || ot.hall[floor][0].node_id == id
+                    || ot.hall[floor][1].node_id == id
+            });
             (id.to_string(), ElevatorStateDto {
                 behaviour: e.behaviour,
                 floor: e.floor,
                 direction,
-                cab_requests: e.requests.map(|floor_btns| floor_btns[2]),
+                cab_requests,
             })
         })
         .collect();
