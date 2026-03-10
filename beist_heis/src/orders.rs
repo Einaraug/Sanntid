@@ -150,7 +150,7 @@ impl OrderTable {
         vec![Change::CabOrder {floor, node_id}]
     }
 
-    pub fn assign_node_id(&mut self, floor: usize, btn: Button, node_id: usize) -> Vec<Change> {
+    pub fn assign_order_to(&mut self, floor: usize, btn: Button, node_id: usize) -> Vec<Change> {
         self.set_hall_order_node_id(floor, btn, node_id);
         vec![Change::HallOrder{floor, btn}]
     }

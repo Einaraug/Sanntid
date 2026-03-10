@@ -10,94 +10,111 @@ use crossbeam_channel as cbc;
 use std::time::{Duration, Instant};
 
 const BROADCAST_INTERVAL: Duration = Duration::from_millis(100);
+const PEER_TIMEOUT_INTERVAL: Duration = Duration::from_millis(500);
+
+/// Extracts Ok(val) from a channel recv result, or breaks the loop on disconnect.
+macro_rules! unwrap_or_break {
+    ($msg:expr) => {
+        match $msg {
+            Ok(val) => val,
+            Err(_)  => break,
+        }
+    };
+}
 
 pub fn run(
+    from_buttons: cbc::Receiver<ButtonEvent>,
+    from_network: cbc::Receiver<WorldView>,
+    from_fsm_state: cbc::Receiver<Elevator>,
+    from_fsm_completed: cbc::Receiver<CompletedOrder>,
+    from_assigner: cbc::Receiver<OrderTable>,
     mut wv: WorldView,
     hw: hw::Elevator,
-    from_buttons:       cbc::Receiver<ButtonEvent>,
-    from_network:       cbc::Receiver<WorldView>,
-    from_fsm_state:     cbc::Receiver<Elevator>,
-    from_fsm_completed: cbc::Receiver<CompletedOrder>,
-    from_assigner:      cbc::Receiver<OrderTable>,
-    to_fsm:             cbc::Sender<[[bool; N_BUTTONS]; N_FLOORS]>,
-    to_network:         cbc::Sender<WorldView>,
-    to_assigner:        cbc::Sender<WorldView>,
-) {
-    let mut last_broadcast     = Instant::now();
-    let mut last_peer_check    = Instant::now();
-    let mut last_sent_requests = [[false; N_BUTTONS]; N_FLOORS];
+    to_fsm: cbc::Sender<[[bool; N_BUTTONS]; N_FLOORS]>,
+    to_network: cbc::Sender<WorldView>,
+    to_assigner: cbc::Sender<WorldView>,
+) 
+{
+    let mut last_broadcast = Instant::now(); // Limits WorldView transmission frequency to the network
+    let mut last_peer_check = Instant::now(); // Limits peer timeout check frequency
+    let mut last_sent_requests = [[false; N_BUTTONS]; N_FLOORS]; // Avoids redundant pushes to FSM
 
     loop {
         cbc::select! {
             recv(from_buttons) -> msg => {
-                let Ok(btn) = msg else { break };
-                if let Some(button) = Button::from_index(btn.button as usize) {
+                let btn = unwrap_or_break!(msg);
+
+                if let Some(button) = Button::from_index(btn.button as usize) { // Ensures no invalid button input
                     let changes = wv.order_table.on_btn_press(btn.floor as usize, button, wv.self_id);
                     wv.counters.apply(changes);
                 }
             },
 
             recv(from_fsm_state) -> msg => {
-                let Ok(elev) = msg else { break };
-                let was_stuck = wv.elevator_map.get(wv.self_id).stuck;
-                if elev != wv.elevator_map.get(wv.self_id) {
-                    let changes = wv.elevator_map.set(wv.self_id, elev);
+                let node_state = unwrap_or_break!(msg);
+                let was_stuck = wv.node_states.get(wv.self_id).stuck;
+                
+                if node_state != wv.node_states.get(wv.self_id) { // Avoids redundant updates to node_states
+                    let changes = wv.node_states.set(wv.self_id, node_state);
                     wv.counters.apply(changes);
                 }
+
                 // Newly stuck: unassign our orders so other elevators pick them up
-                if elev.stuck && !was_stuck {
+                if node_state.stuck && !was_stuck {
                     let changes = wv.order_table.unassign_orders_for(wv.self_id);
                     wv.counters.apply(changes);
                 }
             },
 
             recv(from_fsm_completed) -> msg => {
-                let Ok(completed) = msg else { break };
-                let changes = match completed.button {
+                let completed_order = unwrap_or_break!(msg);
+                let changes = match completed_order.button {
                     Button::HallUp | Button::HallDown =>
-                        wv.order_table.clear_hall_order(completed.floor, completed.button),
+                        wv.order_table.clear_hall_order(completed_order.floor, completed_order.button),
                     Button::Cab =>
-                        wv.order_table.clear_cab_order(completed.floor, wv.self_id),
+                        wv.order_table.clear_cab_order(completed_order.floor, wv.self_id),
                 };
                 wv.counters.apply(changes);
             },
 
             recv(from_network) -> msg => {
-                let Ok(peer_wv) = msg else { break };
-                if peer_wv.self_id != wv.self_id {
+                let peer_wv = unwrap_or_break!(msg);
+
+                if peer_wv.self_id != wv.self_id { // Ignore own UDP broadcast
                     let changes = wv.peer_monitor.mark_seen(peer_wv.self_id);
                     wv.counters.apply(changes);
+
                     counters::merge(&mut wv, &peer_wv);
                 }
             },
 
             recv(from_assigner) -> msg => {
-                let Ok(assigned) = msg else { break };
+                let assigned = unwrap_or_break!(msg);
+
                 for floor in 0..N_FLOORS {
                     for btn in [Button::HallUp, Button::HallDown] {
-                        let a = assigned.get_hall_order(floor, btn.to_index());
-                        let c = wv.order_table.get_hall_order(floor, btn.to_index());
-                        if a.node_id == wv.self_id
-                            && c.state == OrderState::Confirmed
-                            && c.node_id == UNASSIGNED_NODE
-                            && !wv.elevator_map.get(wv.self_id).stuck
-                        {
-                            let changes = wv.order_table.assign_node_id(floor, btn, a.node_id);
+                        let suggested_order = assigned.get_hall_order(floor, btn.to_index());
+                        let current_order   = wv.order_table.get_hall_order(floor, btn.to_index());
+
+                        if should_assign(&suggested_order, &current_order, &wv) {
+                            let changes = wv.order_table.assign_order_to(floor, btn, suggested_order.node_id); 
                             wv.counters.apply(changes);
                         }
                     }
                 }
             },
 
-            default(BROADCAST_INTERVAL) => {}
+            default(BROADCAST_INTERVAL) => {} // Ensures loop is left upon no messages
         }
 
+        // After all updates are recieved. Check and apply 
         let changes = wv.order_table.try_confirm_orders(&wv.peer_monitor.availability);
         wv.counters.apply(changes);
 
-        if last_peer_check.elapsed() >= PEER_TIMEOUT {
+        if last_peer_check.elapsed() >= PEER_TIMEOUT_INTERVAL {
             let (dead, changes) = wv.peer_monitor.expire_stale_peers();
             wv.counters.apply(changes);
+
             for node_id in dead {
                 let changes = wv.order_table.unassign_orders_for(node_id);
                 wv.counters.apply(changes);
@@ -105,7 +122,7 @@ pub fn run(
             last_peer_check = Instant::now();
         }
 
-        update_lights(&wv, &hw);
+        update_lights(&wv, &hw); //DO OWN THREAD
 
         let requests = wv.order_table.convert_to_requests(wv.self_id);
         if requests != last_sent_requests {
@@ -122,13 +139,21 @@ pub fn run(
     }
 }
 
+// Helper functions
+fn should_assign(suggested: &crate::orders::HallOrder, current: &crate::orders::HallOrder, wv: &WorldView) -> bool {
+    suggested.node_id == wv.self_id
+        && current.node_id == UNASSIGNED_NODE
+        && current.state   == OrderState::Confirmed
+        && !wv.node_states.get(wv.self_id).stuck
+}
+
 fn update_lights(wv: &WorldView, hw: &hw::Elevator) {
     for floor in 0..N_FLOORS {
         for btn in [Button::HallUp, Button::HallDown] {
-            let on = wv.order_table.get_hall_order(floor, btn.to_index()).state == OrderState::Confirmed;
-            hw.call_button_light(floor as u8, btn.to_index() as u8, on);
+            let turn_on = wv.order_table.get_hall_order(floor, btn.to_index()).state == OrderState::Confirmed;
+            hw.call_button_light(floor as u8, btn.to_index() as u8, turn_on);
         }
-        let on = wv.order_table.get_cab_order(floor, wv.self_id).state == OrderState::Confirmed;
-        hw.call_button_light(floor as u8, Button::Cab.to_index() as u8, on);
+        let turn_on = wv.order_table.get_cab_order(floor, wv.self_id).state == OrderState::Confirmed;
+        hw.call_button_light(floor as u8, Button::Cab.to_index() as u8, turn_on);
     }
 }

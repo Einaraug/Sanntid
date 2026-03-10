@@ -7,6 +7,7 @@ mod orders;
 mod assigner;
 mod counters;
 mod node;
+mod node_states;
 
 use elevio::elev as hw;
 use elevio::poll::{self, ButtonEvent};
@@ -80,7 +81,7 @@ fn main() {
     // ═══════════════════════════════════════════════════════════════
     let hw3 = hw_elev.clone();
     let wv = WorldView::new(self_id);
-    thread::spawn(move || node::run(wv, hw3, btn_rx, from_net_rx, state_rx, completed_rx, from_assigner_rx, order_tx, to_net_tx, to_assigner_tx));
+    thread::spawn(move || node::run(btn_rx, from_net_rx, state_rx, completed_rx, from_assigner_rx, wv, hw3, order_tx, to_net_tx, to_assigner_tx));
 
     // ═══════════════════════════════════════════════════════════════
     // Thread 4: FSM
