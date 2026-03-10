@@ -158,7 +158,7 @@ fn merge_elevators(local: &mut WorldView, incoming: &WorldView) {
         let incoming_ct = incoming.counters.get_elevator(node_id);
 
         if incoming_ct > local_ct {
-            let elevator = *incoming.elevator_map.get(node_id);
+            let elevator = incoming.elevator_map.get(node_id);
             let _ = local.elevator_map.set(node_id, elevator);
 
             local.counters.set_elevator(node_id, incoming_ct);

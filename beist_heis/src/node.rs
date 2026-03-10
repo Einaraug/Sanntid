@@ -40,7 +40,7 @@ pub fn run(
             recv(from_fsm_state) -> msg => {
                 let Ok(elev) = msg else { break };
                 let was_stuck = wv.elevator_map.get(wv.self_id).stuck;
-                if elev != *wv.elevator_map.get(wv.self_id) {
+                if elev != wv.elevator_map.get(wv.self_id) {
                     let changes = wv.elevator_map.set(wv.self_id, elev);
                     wv.counters.apply(changes);
                 }

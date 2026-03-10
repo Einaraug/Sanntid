@@ -19,8 +19,8 @@ impl ElevatorMap {
     pub fn new() -> Self {
         Self { elevator: [Elevator::new(); N_NODES] }
     }
-    pub fn get(&self, node_id: usize) -> &Elevator {
-        &self.elevator[node_id]
+    pub fn get(&self, node_id: usize) -> Elevator {
+        self.elevator[node_id]
     }
     pub fn set(&mut self, node_id: usize, elevator: Elevator) -> Vec<Change> {
         self.elevator[node_id] = elevator;
