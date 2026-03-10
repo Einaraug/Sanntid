@@ -1,5 +1,6 @@
 use crate::elev_algo::elevator::Elevator;
 use crate::orders::OrderTable;
+use crate::nodes::Nodes;
 use crate::counters::{Counters, Change};
 use crate::peer_monitor::PeerMonitor;
 use serde::{Serialize, Deserialize};
@@ -7,26 +8,6 @@ use serde::{Serialize, Deserialize};
 pub const N_NODES: usize = 3;
 pub const N_DIRS: usize = 2;
 
-
-// ── ElevatorMap ───────────────────────────────────────────────────────────────
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct ElevatorMap {
-    pub elevator: [Elevator; N_NODES],
-}
-
-impl ElevatorMap {
-    pub fn new() -> Self {
-        Self { elevator: [Elevator::new(); N_NODES] }
-    }
-    pub fn get(&self, node_id: usize) -> Elevator {
-        self.elevator[node_id]
-    }
-    pub fn set(&mut self, node_id: usize, elevator: Elevator) -> Vec<Change> {
-        self.elevator[node_id] = elevator;
-        vec![Change::Elevator { node_id }]
-    }
-}
 
 // ── WorldView (pure data container) ──────────────────────────────────────────
 

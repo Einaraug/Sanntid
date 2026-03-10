@@ -94,7 +94,7 @@ pub fn merge(local: &mut WorldView, incoming: &WorldView) {
     merge_elevators(local, incoming);
 }
 
-// Helper functions for merge 
+// Private helper functions for merge 
 fn merge_hall_orders(local: &mut WorldView, incoming: &WorldView) {
     for floor in 0..N_FLOORS {
         for btn in [Button::HallUp, Button::HallDown] {

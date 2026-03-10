@@ -44,6 +44,7 @@ impl CabOrder {
     }
 }
 
+// Holds all orders for all nodes
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrderTable {
     pub hall: [[HallOrder; N_DIRS]; N_FLOORS],
@@ -146,7 +147,7 @@ impl OrderTable {
     }
     pub fn clear_cab_order(&mut self, floor: usize, node_id: usize) -> Vec<Change> {
         self.cab[floor][node_id] = CabOrder::new();
-        vec![Change::CabOrder { floor, node_id }]
+        vec![Change::CabOrder {floor, node_id}]
     }
 
     pub fn assign_node_id(&mut self, floor: usize, btn: Button, node_id: usize) -> Vec<Change> {

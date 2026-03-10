@@ -5,10 +5,10 @@ use crate::elevio::poll::ButtonEvent;
 use crate::orders::{OrderState, OrderTable, UNASSIGNED_NODE};
 use crate::world_view::WorldView;
 use crate::counters;
+use crate::peer_monitor::PEER_TIMEOUT;
 use crossbeam_channel as cbc;
 use std::time::{Duration, Instant};
 
-const PEER_TIMEOUT:       Duration = Duration::from_millis(500);
 const BROADCAST_INTERVAL: Duration = Duration::from_millis(100);
 
 pub fn run(
@@ -65,7 +65,7 @@ pub fn run(
             recv(from_network) -> msg => {
                 let Ok(peer_wv) = msg else { break };
                 if peer_wv.self_id != wv.self_id {
-                    let changes = wv.peer_monitor.mark_seen(peer_wv.self_id, PEER_TIMEOUT);
+                    let changes = wv.peer_monitor.mark_seen(peer_wv.self_id);
                     wv.counters.apply(changes);
                     counters::merge(&mut wv, &peer_wv);
                 }
