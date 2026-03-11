@@ -5,7 +5,6 @@ use crate::elevio::poll::ButtonEvent;
 use crate::orders::{OrderState, OrderTable, UNASSIGNED_NODE};
 use crate::world_view::WorldView;
 use crate::counters;
-use crate::peer_monitor::PEER_TIMEOUT;
 use crossbeam_channel as cbc;
 use std::time::{Duration, Instant};
 

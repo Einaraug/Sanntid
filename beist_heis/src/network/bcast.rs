@@ -3,54 +3,52 @@ use log::warn;
 use serde::Deserialize;
 use socket2::Socket;
 use std::mem::MaybeUninit;
-
 use std::error;
 use std::str;
 
 use super::sock;
 
-// Broadcast and receive udp-packages
-// From https://github.com/TTK4145/network-rust/blob/master/src/udpnet/bcast.rs //TODO: keep this?
+const UDP_BUF_SIZE: usize = 4096;
 
-
-pub fn broadcast_udp<T: serde::Serialize>(port: u16, ch: cbc::Receiver<T>) -> std::io::Result<()> { 
-    let (sock, sock_addr) = sock::new_broadcast_tx(port)?;
+/// Serializes values received from `tx_channel` to JSON and broadcasts them over UDP.
+/// Runs forever — intended to be spawned as a dedicated thread.
+pub fn broadcast_udp<T: serde::Serialize>(port: u16, tx_channel: cbc::Receiver<T>) -> std::io::Result<()> {
+    let (socket, broadcast_addr) = sock::new_broadcast_socket(port)?;
 
     loop {
-        // Waits for a struct from the channel, serializes it to JSON, broadcasts it
-        let data = ch.recv().unwrap();
-        let serialized = serde_json::to_string(&data).unwrap();
-        if let Err(e) = sock.send_to(serialized.as_bytes(), &sock_addr) {
-            warn!("Unable to send packet, {}", e);
+        let value     = tx_channel.recv().unwrap();
+        let json      = serde_json::to_string(&value).unwrap();
+        if let Err(e) = socket.send_to(json.as_bytes(), &broadcast_addr) {
+            warn!("UDP send failed: {}", e);
         }
     }
 }
 
-
-pub fn receive_udp<T: serde::de::DeserializeOwned>(port: u16, ch: cbc::Sender<T>) -> std::io::Result<()> {
-    let sock = sock::new_rx(port)?;
-    let mut buf: [MaybeUninit<u8>; 4096] = [MaybeUninit::uninit(); 4096];
+/// Listens for incoming UDP packets, deserializes them from JSON, and forwards
+/// them to `rx_channel`. Runs forever — intended to be spawned as a dedicated thread.
+pub fn receive_udp<T: serde::de::DeserializeOwned>(port: u16, rx_channel: cbc::Sender<T>) -> std::io::Result<()> {
+    let socket  = sock::new_receiver_socket(port)?;
+    let mut buf: [MaybeUninit<u8>; UDP_BUF_SIZE] = [MaybeUninit::uninit(); UDP_BUF_SIZE];
 
     loop {
-        // Waits for a UDP packet, tries to deserialize it, sends it to the channel
-        match parse_packet(&sock, &mut buf) { 
-            Ok(packet) => ch.send(packet).unwrap(), 
-            Err(e) => warn!("Received bad package got error: {}", e),
+        match deserialize_packet(&socket, &mut buf) {
+            Ok(value) => rx_channel.send(value).unwrap(),
+            Err(e)    => warn!("UDP receive failed: {}", e),
         }
     }
 }
 
+// ── Private helpers ───────────────────────────────────────────────────────────
 
-// Helper fuction
-
-// Receives one UDP packet and deserializes it into type T
-// Buffer is uninitialized - recv() fills it before we read it
-fn parse_packet<'a, T: Deserialize<'a>>(
-    sock: &'_ Socket, 
-    buf: &'a mut [MaybeUninit<u8>; 4096],
+/// Reads one UDP packet from `socket` into `buf` and deserializes it into `T`.
+/// Uses MaybeUninit buffer to avoid zeroing memory on every call — recv() fills
+/// it before we read it, so the unsafe slice construction is sound.
+fn deserialize_packet<'a, T: Deserialize<'a>>(
+    socket: &'_ Socket,
+    buf:    &'a mut [MaybeUninit<u8>; UDP_BUF_SIZE],
 ) -> Result<T, Box<dyn error::Error>> {
-    let n = sock.recv(buf)?;
-    let bytes = unsafe { std::slice::from_raw_parts(buf.as_ptr() as *const u8, n) };
-    let msg = str::from_utf8(bytes)?;
-    serde_json::from_str::<T>(msg).map_err(|e| e.into())
+    let bytes_received = socket.recv(buf)?;
+    let bytes          = unsafe { std::slice::from_raw_parts(buf.as_ptr() as *const u8, bytes_received) };
+    let json_str       = str::from_utf8(bytes)?;
+    serde_json::from_str::<T>(json_str).map_err(|e| e.into())
 }

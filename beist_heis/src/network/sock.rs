@@ -1,24 +1,23 @@
 use std::io;
 use std::net;
-
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 
-// Creates the tx and rx sockets used for UDP broadcasting
-// From https://github.com/TTK4145/network-rust/blob/master/src/udpnet/sock.rs //TODO: Keep this?
-
-pub fn new_broadcast_tx(port: u16) -> io::Result<(Socket, SockAddr)> {
-    let sock = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
-    sock.set_broadcast(true)?;
-    sock.set_reuse_address(true)?;
-    let remote_addr = net::SocketAddr::from(([255, 255, 255, 255], port));
-    Ok((sock, remote_addr.into()))
+/// Creates a UDP socket configured for broadcasting.
+/// Returns the socket and the broadcast destination address (255.255.255.255:port).
+pub fn new_broadcast_socket(port: u16) -> io::Result<(Socket, SockAddr)> {
+    let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
+    socket.set_broadcast(true)?;
+    socket.set_reuse_address(true)?;
+    let broadcast_addr = net::SocketAddr::from(([255, 255, 255, 255], port));
+    Ok((socket, broadcast_addr.into()))
 }
 
-pub fn new_rx(port: u16) -> io::Result<Socket> {
-    let sock = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
-    sock.set_broadcast(true)?;
-    sock.set_reuse_address(true)?;
-    let local_addr = net::SocketAddr::from(([0, 0, 0, 0], port));
-    sock.bind(&local_addr.into())?;
-    Ok(sock)
+/// Creates a UDP socket bound to 0.0.0.0:port, ready to receive broadcast packets.
+pub fn new_receiver_socket(port: u16) -> io::Result<Socket> {
+    let socket     = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
+    socket.set_broadcast(true)?;
+    socket.set_reuse_address(true)?;
+    let listen_addr = net::SocketAddr::from(([0, 0, 0, 0], port));
+    socket.bind(&listen_addr.into())?;
+    Ok(socket)
 }
