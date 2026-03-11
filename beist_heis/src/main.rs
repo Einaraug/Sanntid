@@ -37,35 +37,35 @@ fn main() {
     // Channels
     // ═══════════════════════════════════════════════════════════════
 
-    // hw_poll_buttons → worldview
+    // hw_poll_buttons → node
     let (btn_tx, btn_rx) = cbc::unbounded::<ButtonEvent>();
 
     // hw_poll_sensors → fsm
     let (sensor_tx, sensor_rx) = cbc::unbounded::<SensorEvent>();
 
-    // worldview → fsm (full request table)
+    // node → fsm (full request table)
     let (order_tx, order_rx) = cbc::unbounded::<[[bool; N_BUTTONS]; N_FLOORS]>();
 
-    // fsm → worldview (elevator state)
+    // fsm → node (elevator state)
     let (state_tx, state_rx) = cbc::unbounded::<Elevator>();
 
-    // fsm → worldview (completed orders)
+    // fsm → node (completed orders)
     let (completed_tx, completed_rx) = cbc::unbounded::<CompletedOrder>();
 
-    // worldview → udp_tx
+    // node → udp_tx
     let (to_net_tx, to_net_rx) = cbc::unbounded::<WorldView>();
 
-    // udp_rx → worldview
+    // udp_rx → node
     let (from_net_tx, from_net_rx) = cbc::unbounded::<WorldView>();
 
-    // worldview → assigner (bounded(1): WV always sends latest snapshot, drops if busy)
+    // node → assigner (bounded(1): always sends latest snapshot, drops if busy)
     let (to_assigner_tx, to_assigner_rx) = cbc::bounded::<WorldView>(1);
 
-    // assigner → worldview (assigned OrderTable)
+    // assigner → node (assigned OrderTable)
     let (from_assigner_tx, from_assigner_rx) = cbc::unbounded::<OrderTable>();
 
     // ═══════════════════════════════════════════════════════════════
-    // Thread 1: hw_poll_buttons → WorldView
+    // Thread 1: hw_poll_buttons → Node
     // ═══════════════════════════════════════════════════════════════
     let hw1 = hw_elev.clone();
     thread::spawn(move || poll::poll_buttons(hw1, btn_tx, POLL_PERIOD));
@@ -77,7 +77,7 @@ fn main() {
     thread::spawn(move || poll::poll_sensors(hw2, sensor_tx, POLL_PERIOD));
 
     // ═══════════════════════════════════════════════════════════════
-    // Thread 3: WorldView
+    // Thread 3: Node
     // ═══════════════════════════════════════════════════════════════
     let hw3 = hw_elev.clone();
     let wv = WorldView::new(self_id);

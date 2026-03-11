@@ -3,7 +3,7 @@ use crate::world_view::{N_NODES, N_DIRS};
 use crate::counters::Change;
 use serde::{Serialize, Deserialize};
 
-pub const UNASSIGNED_NODE: usize = N_NODES + 1;
+pub const UNASSIGNED: usize = N_NODES + 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OrderState {
@@ -15,7 +15,7 @@ pub enum OrderState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HallOrder {
     pub state: OrderState,
-    pub node_id: usize,
+    pub assigned_to: usize,
     pub seen_by: [bool; N_NODES],
 }
 
@@ -23,7 +23,7 @@ impl HallOrder {
     pub fn new() -> Self {
         Self {
             state: OrderState::None,
-            node_id: UNASSIGNED_NODE,
+            assigned_to: UNASSIGNED,
             seen_by: [false; N_NODES],
         }
     }
@@ -80,8 +80,8 @@ impl OrderTable {
     pub fn set_cab_order_state(&mut self, floor: usize, node_id: usize, state: OrderState) {
         self.cab[floor][node_id].state = state;
     }
-    pub fn set_hall_order_node_id(&mut self, floor: usize, btn: Button, node_id: usize) {
-        self.hall[floor][btn.to_index()].node_id = node_id;
+    pub fn set_hall_order_assigned_to(&mut self, floor: usize, btn: Button, node_id: usize) {
+        self.hall[floor][btn.to_index()].assigned_to = node_id;
     }
     pub fn set_seen_by_hall(&mut self, floor: usize, btn: Button, observer_node_id: usize) {
         self.hall[floor][btn.to_index()].seen_by[observer_node_id] = true;
@@ -100,7 +100,7 @@ impl OrderTable {
                     return vec![];
                 }
                 self.set_hall_order_state(floor, btn, OrderState::Unconfirmed);
-                self.set_hall_order_node_id(floor, btn, UNASSIGNED_NODE);
+                self.set_hall_order_assigned_to(floor, btn, UNASSIGNED);
                 self.set_seen_by_hall(floor, btn, self_id);
                 vec![Change::HallOrder{floor, btn}]
             }
@@ -151,7 +151,7 @@ impl OrderTable {
     }
 
     pub fn assign_order_to(&mut self, floor: usize, btn: Button, node_id: usize) -> Vec<Change> {
-        self.set_hall_order_node_id(floor, btn, node_id);
+        self.set_hall_order_assigned_to(floor, btn, node_id);
         vec![Change::HallOrder{floor, btn}]
     }
 
@@ -163,8 +163,8 @@ impl OrderTable {
             for btn in [Button::HallUp, Button::HallDown] {
                 let hall_order = self.hall[floor][btn.to_index()];
 
-                if hall_order.node_id == node_id && hall_order.state == OrderState::Confirmed {
-                    self.set_hall_order_node_id(floor, btn, UNASSIGNED_NODE);
+                if hall_order.assigned_to == node_id && hall_order.state == OrderState::Confirmed {
+                    self.set_hall_order_assigned_to(floor, btn, UNASSIGNED);
                     changes.push(Change::HallOrder{floor, btn});
                 }
             }
@@ -183,7 +183,7 @@ impl OrderTable {
 
             for btn in [Button::HallUp, Button::HallDown] {
                 let hall_order = self.hall[floor][btn.to_index()];
-                if hall_order.state == OrderState::Confirmed && hall_order.node_id == self_id {
+                if hall_order.state == OrderState::Confirmed && hall_order.assigned_to == self_id {
                     requests[floor][btn.to_index()] = true;
                 }
             }

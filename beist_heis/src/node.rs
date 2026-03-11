@@ -2,7 +2,7 @@ use crate::elev_algo::elevator::{Button, Elevator, N_FLOORS, N_BUTTONS};
 use crate::elev_algo::fsm::CompletedOrder;
 use crate::elevio::elev as hw;
 use crate::elevio::poll::ButtonEvent;
-use crate::orders::{OrderState, OrderTable, UNASSIGNED_NODE};
+use crate::orders::{OrderState, OrderTable, UNASSIGNED};
 use crate::world_view::WorldView;
 use crate::counters;
 use crossbeam_channel as cbc;
@@ -96,7 +96,7 @@ pub fn run(
                         let current_order   = wv.order_table.get_hall_order(floor, btn.to_index());
 
                         if should_assign(&suggested_order, &current_order, &wv) {
-                            let changes = wv.order_table.assign_order_to(floor, btn, suggested_order.node_id); 
+                            let changes = wv.order_table.assign_order_to(floor, btn, suggested_order.assigned_to);
                             wv.counters.apply(changes);
                         }
                     }
@@ -140,8 +140,8 @@ pub fn run(
 
 // Helper functions
 fn should_assign(suggested: &crate::orders::HallOrder, current: &crate::orders::HallOrder, wv: &WorldView) -> bool {
-    suggested.node_id == wv.self_id
-        && current.node_id == UNASSIGNED_NODE
+    suggested.assigned_to == wv.self_id
+        && current.assigned_to == UNASSIGNED
         && current.state   == OrderState::Confirmed
         && !wv.node_states.get(wv.self_id).stuck
 }

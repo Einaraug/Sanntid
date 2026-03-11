@@ -2,7 +2,7 @@ use std::time::Instant;
 use std::time::Duration;
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Timer {
     end_time: Option<Instant>,
 }
@@ -23,5 +23,13 @@ impl Timer {
             Some(end) => Instant::now() > end,
             None => false,
         }
+    }
+
+    pub fn remaining(&self) -> Option<Duration> {
+        self.end_time.map(|end| end.saturating_duration_since(Instant::now()))
+    }
+
+    pub fn cancel(&mut self) {
+        self.end_time = None;
     }
 }

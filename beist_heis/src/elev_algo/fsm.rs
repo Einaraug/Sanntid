@@ -1,9 +1,10 @@
 use crate::elev_algo::elevator::*;
+use crate::elev_algo::timer::Timer;
 use crate::elevio::elev as hw;
 use crossbeam_channel as cbc;
-use std::time::{Duration, Instant};
- 
-const MOTOR_TIMEOUT: Duration = Duration::from_secs(4);
+use std::time::Duration;
+
+const MOTOR_TIMEOUT_SECS: f64 = 4.0;
 
 /// Extracts Ok(val) from a channel recv result, or breaks the loop on disconnect.
 macro_rules! unwrap_or_break {
@@ -50,13 +51,13 @@ impl Elevator {
         hw: hw::Elevator,
         sensors: cbc::Receiver<SensorEvent>,
         orders: cbc::Receiver<[[bool; N_BUTTONS]; N_FLOORS]>,
-        to_wv: cbc::Sender<Elevator>,
-        to_wv_completed: cbc::Sender<CompletedOrder>,
+        to_node: cbc::Sender<Elevator>,
+        to_node_completed: cbc::Sender<CompletedOrder>,
     ) 
     {
-        let door_duration = Duration::from_secs_f64(self.door_open_duration_s);
-        let mut door_timer: Option<Instant> = None;
-        let mut motor_watchdog: Option<Instant> = None;
+        let door_open_duration_s = self.door_open_duration_s;
+        let mut door_timer = Timer::new();
+        let mut motor_watchdog = Timer::new();
         let mut last_sent = self.clone();
         let mut obstructed = false;
 
@@ -69,7 +70,7 @@ impl Elevator {
         hw.door_light(false);
 
         loop {
-            let select_timeout = Self::time_until_next_deadline(door_timer, motor_watchdog);
+            let select_timeout = Self::time_until_next_deadline(&door_timer, &motor_watchdog);
             let mut before = self.requests;
 
             // Handle incoming event
@@ -78,7 +79,7 @@ impl Elevator {
                     let event = unwrap_or_break!(msg);
                     let output = match event {
                         SensorEvent::FloorArrival(floor) => {
-                            motor_watchdog = None;
+                            motor_watchdog.cancel();
                             let (new_self, output) = self.on_floor_arrival(floor as i32);
                             self = new_self;
                             output
@@ -88,9 +89,9 @@ impl Elevator {
                             if on {
                                 // stuck is reserved for motor failure (triggers order
                                 // redistribution). Obstruction only blocks the door timer.
-                                door_timer = None;
+                                door_timer.cancel();
                             } else if self.behaviour == Behaviour::DoorOpen {
-                                door_timer = Some(Instant::now() + door_duration);
+                                door_timer.start(door_open_duration_s);
                             }
                             FsmOutput::new()
                         }
@@ -101,7 +102,7 @@ impl Elevator {
                     };
                     
                     self.apply_output(&hw, &output);
-                    Self::update_timers(&output, &mut door_timer, &mut motor_watchdog, door_duration);
+                    Self::update_timers(&output, &mut door_timer, &mut motor_watchdog, door_open_duration_s);
                 },
                 recv(orders) -> msg => {
                     let new_requests = unwrap_or_break!(msg);
@@ -113,11 +114,11 @@ impl Elevator {
                                 let (new_self, output) = self.on_request_button_press(floor, button);
                                 self = new_self;
                                 self.apply_output(&hw, &output);
-                                Self::update_timers(&output, &mut door_timer, &mut motor_watchdog, door_duration);
+                                Self::update_timers(&output, &mut door_timer, &mut motor_watchdog, door_open_duration_s);
                                 // If served immediately, requests goes false→true→false in one
                                 // step and the diff below misses it — report via completed_orders.
                                 for (floor, btn) in &output.completed_orders {
-                                    let _ = to_wv_completed.send(CompletedOrder {floor: *floor, button: *btn});
+                                    let _ = to_node_completed.send(CompletedOrder {floor: *floor, button: *btn});
                                 }
                             } else if !new_requests[floor][btn] && self.requests[floor][btn] {
                                 // Order dropped externally — clear without reporting as completed,
@@ -133,34 +134,30 @@ impl Elevator {
 
             // Door timer
             // Evaluated after every arm — a busy orders channel starves default.
-            if let Some(deadline) = door_timer {
-                if !obstructed && Instant::now() >= deadline {
-                    door_timer = None;
-                    let (new_self, output) = self.on_door_timeout();
-                    self = new_self;
-                    self.apply_output(&hw, &output);
-                    Self::update_timers(&output, &mut door_timer, &mut motor_watchdog, door_duration);
-                }
+            if !obstructed && door_timer.timed_out() {
+                door_timer.cancel();
+                let (new_self, output) = self.on_door_timeout();
+                self = new_self;
+                self.apply_output(&hw, &output);
+                Self::update_timers(&output, &mut door_timer, &mut motor_watchdog, door_open_duration_s);
             }
 
             // Motor watchdog
-            if let Some(deadline) = motor_watchdog {
-                if Instant::now() >= deadline {
-                    motor_watchdog = None;
-                    self.stuck = true;
-                }
+            if motor_watchdog.timed_out() {
+                motor_watchdog.cancel();
+                self.stuck = true;
             }
 
             for floor in 0..N_FLOORS {
                 for btn in 0..N_BUTTONS {
                     if before[floor][btn] && !self.requests[floor][btn] {
-                        let _ = to_wv_completed.send(CompletedOrder{floor, button: Button::from_index(btn).unwrap()});
+                        let _ = to_node_completed.send(CompletedOrder{floor, button: Button::from_index(btn).unwrap()});
                     }
                 }
             }
 
             if self != last_sent {
-                let _ = to_wv.send(self.clone());
+                let _ = to_node.send(self.clone());
                 last_sent = self.clone();
             }
         }
@@ -168,27 +165,26 @@ impl Elevator {
 
     fn update_timers(
         output: &FsmOutput,
-        door_timer: &mut Option<Instant>,
-        motor_watchdog: &mut Option<Instant>,
-        door_duration: Duration,
+        door_timer: &mut Timer,
+        motor_watchdog: &mut Timer,
+        door_open_duration_s: f64,
     ) {
         if output.start_door_timer {
-            *door_timer = Some(Instant::now() + door_duration);
+            door_timer.start(door_open_duration_s);
         }
         if matches!(output.motor_direction, Some(Dirn::Up) | Some(Dirn::Down)) {
-            *motor_watchdog = Some(Instant::now() + MOTOR_TIMEOUT);
+            motor_watchdog.start(MOTOR_TIMEOUT_SECS);
         } else if matches!(output.motor_direction, Some(Dirn::Stop)) {
-            *motor_watchdog = None;
+            motor_watchdog.cancel();
         }
     }
 
     /// Returns how long the select should block before waking to check timers.
     /// Picks the soonest active deadline, falling back to 100 ms if none are set.
-    fn time_until_next_deadline(door_timer: Option<Instant>, motor_watchdog: Option<Instant>) -> Duration {
-        [door_timer, motor_watchdog]
+    fn time_until_next_deadline(door_timer: &Timer, motor_watchdog: &Timer) -> Duration {
+        [door_timer.remaining(), motor_watchdog.remaining()]
             .into_iter()
             .flatten()
-            .map(|d| d.saturating_duration_since(Instant::now()))
             .min()
             .unwrap_or(Duration::from_millis(100))
     }

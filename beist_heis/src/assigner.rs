@@ -3,7 +3,7 @@ use std::process::{Command, Stdio};
 use serde::Serialize;
 use crate::world_view::*;
 use crate::elev_algo::elevator::{N_FLOORS, N_BUTTONS, Dirn, Behaviour};
-use crate::orders::{OrderState, OrderTable, UNASSIGNED_NODE};
+use crate::orders::{OrderState, OrderTable};
 
 
 #[derive(Serialize)]
@@ -93,7 +93,7 @@ pub fn process_assigner_output(
         for floor in 0..N_FLOORS {
             for btn in 0..2 {
                 if node_orders[floor][btn] {
-                    order_table.hall[floor][btn].node_id = self_id;
+                    order_table.hall[floor][btn].assigned_to = self_id;
                 }
             }
         }
@@ -114,7 +114,7 @@ mod tests {
 
         // Confirmed + assigned — should still be included so the binary sees full load
         wv.order_table.set_hall_order_state(1, Button::HallDown, OrderState::Confirmed);
-        wv.order_table.set_hall_order_node_id(1, Button::HallDown, 1);
+        wv.order_table.set_hall_order_assigned_to(1, Button::HallDown, 1);
 
         // Unconfirmed — should be excluded
         wv.order_table.set_hall_order_state(2, Button::HallUp, OrderState::Unconfirmed);
@@ -148,8 +148,8 @@ mod tests {
 
         process_assigner_output(1, &binary_output, &mut ot);
 
-        assert_eq!(ot.hall[2][1].node_id, 1, "Floor 2 HallDown should be assigned to node 1 (self)");
-        assert_eq!(ot.hall[0][0].node_id, UNASSIGNED_NODE, "Floor 0 HallUp belongs to node 0, should not be set by node 1's assigner");
+        assert_eq!(ot.hall[2][1].assigned_to,1, "Floor 2 HallDown should be assigned to node 1 (self)");
+        assert_eq!(ot.hall[0][0].assigned_to,UNASSIGNED, "Floor 0 HallUp belongs to node 0, should not be set by node 1's assigner");
     }
 
     #[test]
@@ -166,7 +166,7 @@ mod tests {
 
         process_assigner_output(2, &binary_output, &mut ot);
 
-        assert_eq!(ot.hall[3][0].node_id, 2, "Order should be assigned to node 2");
+        assert_eq!(ot.hall[3][0].assigned_to,2, "Order should be assigned to node 2");
     }
 
     #[test]
@@ -185,8 +185,8 @@ mod tests {
         process_assigner_output(0, &binary_output, &mut ot);
 
         for floor in 0..N_FLOORS {
-            assert_eq!(ot.hall[floor][0].node_id, UNASSIGNED_NODE, "No HallUp should be assigned");
-            assert_eq!(ot.hall[floor][1].node_id, UNASSIGNED_NODE, "No HallDown should be assigned");
+            assert_eq!(ot.hall[floor][0].assigned_to,UNASSIGNED, "No HallUp should be assigned");
+            assert_eq!(ot.hall[floor][1].assigned_to,UNASSIGNED, "No HallDown should be assigned");
         }
     }
 }
