@@ -1,20 +1,18 @@
-use std::usize;
-
 use serde::{Serialize, Deserialize};
 
 pub const N_FLOORS: usize = 4;
-
 pub const N_BUTTONS: usize = 3;
+pub const DOOR_OPEN_DURATION: f64 = 2.0;
 
+/// Motor direction commanded to the hardware.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[repr(i32)]
-#[serde(rename_all = "camelCase")]
 pub enum Dirn {
     Down = -1,
     Stop = 0,
     Up = 1,
 }
 
+/// Which button was pressed — determines order type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Button {
     HallUp,
@@ -25,14 +23,14 @@ pub enum Button {
 impl Button {
     pub fn to_index(self) -> usize {
         match self {
-            Button::HallUp => 0,
+            Button::HallUp   => 0,
             Button::HallDown => 1,
-            Button::Cab => 2,
+            Button::Cab      => 2,
         }
     }
 
-    pub fn from_index(idx: usize) -> Option<Self> {
-        match idx {
+    pub fn from_index(btn_id: usize) -> Option<Self> {
+        match btn_id {
             0 => Some(Button::HallUp),
             1 => Some(Button::HallDown),
             2 => Some(Button::Cab),
@@ -41,8 +39,8 @@ impl Button {
     }
 }
 
+/// FSM state of the elevator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub enum Behaviour {
     #[default]
     Idle,
@@ -57,7 +55,6 @@ pub struct Elevator {
     pub requests: [[bool; N_BUTTONS]; N_FLOORS],
     pub behaviour: Behaviour,
     pub door_open_duration_s: f64,
-    #[serde(default)]
     pub stuck: bool,
 }
 
@@ -68,14 +65,8 @@ impl Elevator {
             dirn: Dirn::Stop,
             requests: [[false; N_BUTTONS]; N_FLOORS],
             behaviour: Behaviour::Idle,
-            door_open_duration_s: 1.5,
+            door_open_duration_s: DOOR_OPEN_DURATION,
             stuck: false,
         }
-    }
-}
-
-impl Default for Elevator {
-    fn default() -> Self {
-        Self::new()
     }
 }
