@@ -32,7 +32,8 @@ pub fn run(
     to_fsm: cbc::Sender<[[bool; N_BUTTONS]; N_FLOORS]>,
     to_network: cbc::Sender<WorldView>,
     to_assigner: cbc::Sender<WorldView>,
-) 
+    to_gui: cbc::Sender<WorldView>,
+)
 {
     let mut last_broadcast = Instant::now(); // Limits WorldView transmission frequency to the network
     let mut last_peer_check = Instant::now(); // Limits peer timeout check frequency
@@ -130,6 +131,7 @@ pub fn run(
         }
 
         let _ = to_assigner.try_send(wv.clone());
+        let _ = to_gui.try_send(wv.clone());
 
         if last_broadcast.elapsed() >= BROADCAST_INTERVAL {
             let _ = to_network.send(wv.clone());

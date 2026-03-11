@@ -8,6 +8,7 @@ mod assigner;
 mod counters;
 mod node;
 mod node_states;
+mod gui;
 
 use elevio::elev as hw;
 use elevio::poll::{self, ButtonEvent};
@@ -61,6 +62,9 @@ fn main() {
     // node → assigner (bounded(1): always sends latest snapshot, drops if busy)
     let (to_assigner_tx, to_assigner_rx) = cbc::bounded::<WorldView>(1);
 
+    // node → gui (bounded(1): always shows latest snapshot, drops if busy)
+    let (to_gui_tx, to_gui_rx) = cbc::bounded::<WorldView>(1);
+
     // assigner → node (assigned OrderTable)
     let (from_assigner_tx, from_assigner_rx) = cbc::unbounded::<OrderTable>();
 
@@ -81,7 +85,7 @@ fn main() {
     // ═══════════════════════════════════════════════════════════════
     let hw3 = hw_elev.clone();
     let wv = WorldView::new(self_id);
-    thread::spawn(move || node::run(btn_rx, from_net_rx, state_rx, completed_rx, from_assigner_rx, wv, hw3, order_tx, to_net_tx, to_assigner_tx));
+    thread::spawn(move || node::run(btn_rx, from_net_rx, state_rx, completed_rx, from_assigner_rx, wv, hw3, order_tx, to_net_tx, to_assigner_tx, to_gui_tx));
 
     // ═══════════════════════════════════════════════════════════════
     // Thread 4: FSM
@@ -116,9 +120,7 @@ fn main() {
     });
 
     // ═══════════════════════════════════════════════════════════════
-    // Main thread: keep alive
+    // Main thread: GUI
     // ═══════════════════════════════════════════════════════════════
-    loop {
-        thread::sleep(Duration::from_secs(1));
-    }
+    gui::run(to_gui_rx);
 }
