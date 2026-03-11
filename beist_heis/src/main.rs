@@ -105,14 +105,14 @@ fn main() {
     // Thread 6: UDP TX
     // ═══════════════════════════════════════════════════════════════
     thread::spawn(move || {
-        network::bcast::udp_send(WV_PORT, to_net_rx).unwrap();
+        network::bcast::broadcast_udp(WV_PORT, to_net_rx).unwrap();
     });
 
     // ═══════════════════════════════════════════════════════════════
     // Thread 7: UDP RX
     // ═══════════════════════════════════════════════════════════════
     thread::spawn(move || {
-        network::bcast::udp_receive(WV_PORT, from_net_tx).unwrap();
+        network::bcast::receive_udp(WV_PORT, from_net_tx).unwrap();
     });
 
     // ═══════════════════════════════════════════════════════════════

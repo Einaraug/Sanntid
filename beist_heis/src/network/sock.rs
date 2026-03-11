@@ -3,7 +3,10 @@ use std::net;
 
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 
-pub fn new_tx(port: u16) -> io::Result<(Socket, SockAddr)> {
+// Creates the tx and rx sockets used for UDP broadcasting
+// From https://github.com/TTK4145/network-rust/blob/master/src/udpnet/sock.rs //TODO: Keep this?
+
+pub fn new_broadcast_tx(port: u16) -> io::Result<(Socket, SockAddr)> {
     let sock = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
     sock.set_broadcast(true)?;
     sock.set_reuse_address(true)?;
