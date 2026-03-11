@@ -6,6 +6,7 @@ pub const DOOR_OPEN_DURATION: f64 = 2.0;
 
 /// Motor direction commanded to the hardware.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Dirn {
     Down = -1,
     Stop = 0,
@@ -41,6 +42,7 @@ impl Button {
 
 /// FSM state of the elevator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Behaviour {
     #[default]
     Idle,

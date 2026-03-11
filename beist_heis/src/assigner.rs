@@ -3,7 +3,7 @@ use std::process::{Command, Stdio};
 use serde::Serialize;
 use crate::world_view::*;
 use crate::elev_algo::elevator::{N_FLOORS, N_BUTTONS, Dirn, Behaviour};
-use crate::orders::{OrderState, OrderTable};
+use crate::orders::{OrderState, OrderTable, UNASSIGNED};
 
 
 #[derive(Serialize)]
