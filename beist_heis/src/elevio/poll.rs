@@ -4,6 +4,7 @@ use std::time;
 
 use super::elev;
 use crate::elev_algo::fsm::SensorEvent;
+use crate::elev_algo::elevator::{N_BUTTONS, N_FLOORS};
 
 /// Button press event - sent to WorldView
 #[derive(Debug, Clone)]
@@ -14,15 +15,15 @@ pub struct ButtonEvent {
 
 /// Polls buttons and sends to WorldView
 pub fn poll_buttons(elev: elev::Elevator, ch: cbc::Sender<ButtonEvent>, period: time::Duration) {
-    let mut prev = vec![[false; 3]; elev.num_floors.into()];
+    let mut prev = [[false; N_BUTTONS]; N_FLOORS];
     loop {
-        for f in 0..elev.num_floors {
-            for c in 0..3 {
-                let v = elev.call_button(f, c);
-                if v && prev[f as usize][c as usize] != v {
-                    ch.send(ButtonEvent { floor: f, button: c }).unwrap();
+        for floor in 0..N_FLOORS as u8{
+            for btn in 0..N_BUTTONS as u8{
+                let pressed = elev.call_button(floor, btn);
+                if pressed && prev[floor as usize][btn as usize] != pressed {
+                    ch.send(ButtonEvent {floor: floor, button: btn}).unwrap();
                 }
-                prev[f as usize][c as usize] = v;
+                prev[floor as usize][btn as usize] = pressed;
             }
         }
         thread::sleep(period)
@@ -37,10 +38,10 @@ pub fn poll_sensors(elev: elev::Elevator, ch: cbc::Sender<SensorEvent>, period: 
 
     loop {
         // Floor sensor
-        if let Some(f) = elev.floor_sensor() {
-            if f != prev_floor {
-                ch.send(SensorEvent::FloorArrival(f)).unwrap();
-                prev_floor = f;
+        if let Some(floor) = elev.floor_sensor() {
+            if floor != prev_floor {
+                ch.send(SensorEvent::FloorArrival(floor)).unwrap();
+                prev_floor = floor;
             }
         }
 
