@@ -27,8 +27,8 @@ type BinaryOutput = HashMap<String, [[bool; N_BUTTONS]; N_FLOORS]>;
 fn build_input(wv: &WorldView) -> AssignerInput {
     let ot = &wv.order_table;
     let hall_requests = std::array::from_fn(|floor| [
-        ot.hall[floor][0].state == OrderState::Confirmed,
-        ot.hall[floor][1].state == OrderState::Confirmed,
+        ot.hall[floor][0].state == OrderState::Confirmed && ot.hall[floor][0].assigned_to == UNASSIGNED,
+        ot.hall[floor][1].state == OrderState::Confirmed && ot.hall[floor][1].assigned_to == UNASSIGNED,
     ]);
     let self_id = wv.self_id;
     let states = (0..N_NODES)
@@ -106,13 +106,13 @@ mod tests {
     use crate::elev_algo::elevator::Button;
 
     #[test]
-    fn build_input_includes_all_confirmed_orders() {
+    fn build_input_only_includes_unassigned_confirmed_orders() {
         let mut wv = WorldView::new(0);
 
-        // Confirmed + unassigned
+        // Confirmed + unassigned — should be included
         wv.order_table.set_hall_order_state(0, Button::HallUp, OrderState::Confirmed);
 
-        // Confirmed + assigned — should still be included so the binary sees full load
+        // Confirmed + assigned — should be excluded
         wv.order_table.set_hall_order_state(1, Button::HallDown, OrderState::Confirmed);
         wv.order_table.set_hall_order_assigned_to(1, Button::HallDown, 1);
 
@@ -121,8 +121,8 @@ mod tests {
 
         let input = build_input(&wv);
 
-        assert!(input.hall_requests[0][0], "Floor 0 HallUp should be included (confirmed)");
-        assert!(input.hall_requests[1][1], "Floor 1 HallDown should be included (confirmed, even if assigned)");
+        assert!(input.hall_requests[0][0], "Floor 0 HallUp should be included (confirmed + unassigned)");
+        assert!(!input.hall_requests[1][1], "Floor 1 HallDown should be excluded (assigned)");
         assert!(!input.hall_requests[2][0], "Floor 2 HallUp should be excluded (unconfirmed)");
     }
 
