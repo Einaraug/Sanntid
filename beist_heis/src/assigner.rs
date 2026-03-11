@@ -2,34 +2,33 @@ use std::collections::HashMap;
 use std::process::{Command, Stdio};
 use serde::Serialize;
 use crate::world_view::*;
-use crate::elev_algo::elevator::{N_FLOORS, Dirn, Behaviour};
+use crate::elev_algo::elevator::{N_FLOORS, N_BUTTONS, Dirn, Behaviour};
 use crate::orders::{OrderState, OrderTable, UNASSIGNED_NODE};
 
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct AssignerInput {
-    #[serde(rename = "hallRequests")]
-    hall_requests: [[bool; 2]; N_FLOORS],
+    hall_requests: [[bool; N_DIRS]; N_FLOORS],
     states: HashMap<String, ElevatorStateDto>,
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct ElevatorStateDto {
     behaviour: Behaviour,
     floor: i32,
     direction: Dirn,
-    #[serde(rename = "cabRequests")]
     cab_requests: [bool; N_FLOORS],
 }
 
-type BinaryOutput = HashMap<String, [[bool; 3]; N_FLOORS]>;
+type BinaryOutput = HashMap<String, [[bool; N_BUTTONS]; N_FLOORS]>;
 
 fn build_input(wv: &WorldView) -> AssignerInput {
     let ot = &wv.order_table;
-    // Only include orders where state == Confirmed AND node_id == UNASSIGNED_NODE
     let hall_requests = std::array::from_fn(|floor| [
-        ot.hall[floor][0].state == OrderState::Confirmed && ot.hall[floor][0].node_id == UNASSIGNED_NODE,
-        ot.hall[floor][1].state == OrderState::Confirmed && ot.hall[floor][1].node_id == UNASSIGNED_NODE,
+        ot.hall[floor][0].state == OrderState::Confirmed,
+        ot.hall[floor][1].state == OrderState::Confirmed,
     ]);
     let self_id = wv.self_id;
     let states = (0..N_NODES)
@@ -37,19 +36,12 @@ fn build_input(wv: &WorldView) -> AssignerInput {
         .map(|id| {
             let e = wv.node_states.get(id);
             let direction = match (e.floor, e.dirn) {
-                (0, Dirn::Down)                                    => Dirn::Stop,
-                (f, Dirn::Up) if f == N_FLOORS as i32 - 1         => Dirn::Stop,
-                _                                                  => e.dirn,
+                (0, Dirn::Down) => Dirn::Stop,
+                (f, Dirn::Up) if f == N_FLOORS as i32 - 1 => Dirn::Stop,
+                _ => e.dirn,
             };
-            // Include already-assigned hall orders as if they were cab requests so the
-            // cost function sees the full load each elevator is carrying.  Without this
-            // the binary treats an elevator that already owns hall orders as if it were
-            // empty, causing all redistributed orders to pile onto the same elevator.
-            let cab_requests = std::array::from_fn(|floor| {
-                e.requests[floor][2]
-                    || ot.hall[floor][0].node_id == id
-                    || ot.hall[floor][1].node_id == id
-            });
+
+            let cab_requests = std::array::from_fn(|floor| e.requests[floor][2]);
             (id.to_string(), ElevatorStateDto {
                 behaviour: e.behaviour,
                 floor: e.floor,
@@ -114,29 +106,23 @@ mod tests {
     use crate::elev_algo::elevator::Button;
 
     #[test]
-    fn build_input_only_includes_unassigned_confirmed_orders() {
+    fn build_input_includes_all_confirmed_orders() {
         let mut wv = WorldView::new(0);
 
-        // Set up: floor 0 HallUp = Confirmed + UNASSIGNED (should include)
+        // Confirmed + unassigned
         wv.order_table.set_hall_order_state(0, Button::HallUp, OrderState::Confirmed);
-        // node_id defaults to UNASSIGNED_NODE
 
-        // Set up: floor 1 HallDown = Confirmed but assigned to node 1 (should exclude)
+        // Confirmed + assigned — should still be included so the binary sees full load
         wv.order_table.set_hall_order_state(1, Button::HallDown, OrderState::Confirmed);
         wv.order_table.set_hall_order_node_id(1, Button::HallDown, 1);
 
-        // Set up: floor 2 HallUp = Unconfirmed + UNASSIGNED (should exclude)
+        // Unconfirmed — should be excluded
         wv.order_table.set_hall_order_state(2, Button::HallUp, OrderState::Unconfirmed);
 
         let input = build_input(&wv);
 
-        // Floor 0 HallUp should be true (confirmed + unassigned)
-        assert!(input.hall_requests[0][0], "Floor 0 HallUp should be included");
-
-        // Floor 1 HallDown should be false (confirmed but assigned)
-        assert!(!input.hall_requests[1][1], "Floor 1 HallDown should be excluded (assigned)");
-
-        // Floor 2 HallUp should be false (unconfirmed)
+        assert!(input.hall_requests[0][0], "Floor 0 HallUp should be included (confirmed)");
+        assert!(input.hall_requests[1][1], "Floor 1 HallDown should be included (confirmed, even if assigned)");
         assert!(!input.hall_requests[2][0], "Floor 2 HallUp should be excluded (unconfirmed)");
     }
 
