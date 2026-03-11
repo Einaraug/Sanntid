@@ -2,6 +2,8 @@ use std::io;
 use std::net;
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 
+// From https://github.com/TTK4145/network-rust/blob/master/src/udpnet/sock.rs
+
 /// Creates a UDP socket configured for broadcasting.
 /// Returns the socket and the broadcast destination address (255.255.255.255:port).
 pub fn new_broadcast_socket(port: u16) -> io::Result<(Socket, SockAddr)> {
@@ -14,7 +16,7 @@ pub fn new_broadcast_socket(port: u16) -> io::Result<(Socket, SockAddr)> {
 
 /// Creates a UDP socket bound to 0.0.0.0:port, ready to receive broadcast packets.
 pub fn new_receiver_socket(port: u16) -> io::Result<Socket> {
-    let socket     = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
+    let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
     socket.set_broadcast(true)?;
     socket.set_reuse_address(true)?;
     let listen_addr = net::SocketAddr::from(([0, 0, 0, 0], port));

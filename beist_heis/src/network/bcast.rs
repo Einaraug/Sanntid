@@ -10,14 +10,18 @@ use super::sock;
 
 const UDP_BUF_SIZE: usize = 4096;
 
+// Broadcast and receive udp-packages
+// From https://github.com/TTK4145/network-rust/blob/master/src/udpnet/bcast.rs //TODO: keep this?
+
+
 /// Serializes values received from `tx_channel` to JSON and broadcasts them over UDP.
 /// Runs forever — intended to be spawned as a dedicated thread.
 pub fn broadcast_udp<T: serde::Serialize>(port: u16, tx_channel: cbc::Receiver<T>) -> std::io::Result<()> {
     let (socket, broadcast_addr) = sock::new_broadcast_socket(port)?;
 
     loop {
-        let value     = tx_channel.recv().unwrap();
-        let json      = serde_json::to_string(&value).unwrap();
+        let value = tx_channel.recv().unwrap();
+        let json = serde_json::to_string(&value).unwrap();
         if let Err(e) = socket.send_to(json.as_bytes(), &broadcast_addr) {
             warn!("UDP send failed: {}", e);
         }
@@ -38,7 +42,8 @@ pub fn receive_udp<T: serde::de::DeserializeOwned>(port: u16, rx_channel: cbc::S
     }
 }
 
-// ── Private helpers ───────────────────────────────────────────────────────────
+
+// Private helpers
 
 /// Reads one UDP packet from `socket` into `buf` and deserializes it into `T`.
 /// Uses MaybeUninit buffer to avoid zeroing memory on every call — recv() fills

@@ -5,6 +5,8 @@ use std::io::*;
 use std::net::TcpStream;
 use std::sync::*;
 
+/// TCP connection with the elevator
+
 #[derive(Clone, Debug)]
 pub struct Elevator {
     socket: Arc<Mutex<TcpStream>>,

@@ -1,6 +1,7 @@
 use std::time::Instant;
 use std::time::Duration;
 
+
 #[derive(Debug, Clone)]
 pub struct Timer {
     end_time: Option<Instant>,
@@ -22,11 +23,5 @@ impl Timer {
             Some(end) => Instant::now() > end,
             None => false,
         }
-    }
-}
-
-impl Default for Timer {
-    fn default() -> Self {
-        Self::new()
     }
 }
