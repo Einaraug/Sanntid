@@ -5,6 +5,7 @@ use crossbeam_channel as cbc;
 use std::time::Duration;
 
 const MOTOR_TIMEOUT_SECS: f64 = 4.0;
+const OBSTRUCTION_TIMEOUT_SECS: f64 = 15.0;
 
 /// Extracts Ok(val) from a channel recv result, or breaks the loop on disconnect.
 macro_rules! unwrap_or_break {
@@ -58,8 +59,10 @@ impl Elevator {
         let door_open_duration_s = self.door_open_duration_s;
         let mut door_timer = Timer::new();
         let mut motor_watchdog = Timer::new();
+        let mut obstruction_timer = Timer::new();
         let mut last_sent = self.clone();
         let mut obstructed = false;
+        let mut obstruction_caused_stuck = false;
 
         if hw.floor_sensor().is_none() {
             let (new_self, output) = self.on_init_between_floors();
@@ -70,7 +73,7 @@ impl Elevator {
         hw.door_light(false);
 
         loop {
-            let select_timeout = Self::time_until_next_deadline(&door_timer, &motor_watchdog);
+            let select_timeout = Self::time_until_next_deadline(&door_timer, &motor_watchdog, &obstruction_timer);
             let mut before = self.requests;
 
             // Handle incoming event
@@ -87,11 +90,15 @@ impl Elevator {
                         SensorEvent::Obstruction(on) => {
                             obstructed = on;
                             if on {
-                                // stuck is reserved for motor failure (triggers order
-                                // redistribution). Obstruction only blocks the door timer.
                                 door_timer.cancel();
+                                obstruction_timer.start(OBSTRUCTION_TIMEOUT_SECS);
                             } else if self.behaviour == Behaviour::DoorOpen {
                                 door_timer.start(door_open_duration_s);
+                                obstruction_timer.cancel();
+                                if obstruction_caused_stuck {
+                                    self.stuck = false;
+                                    obstruction_caused_stuck = false;
+                                }
                             }
                             FsmOutput::new()
                         }
@@ -148,6 +155,13 @@ impl Elevator {
                 self.stuck = true;
             }
 
+            // Obstruction watchdog
+            if obstruction_timer.timed_out() {
+                obstruction_timer.cancel();
+                self.stuck = true;
+                obstruction_caused_stuck = true;
+            }
+
             for floor in 0..N_FLOORS {
                 for btn in 0..N_BUTTONS {
                     if before[floor][btn] && !self.requests[floor][btn] {
@@ -181,8 +195,8 @@ impl Elevator {
 
     /// Returns how long the select should block before waking to check timers.
     /// Picks the soonest active deadline, falling back to 100 ms if none are set.
-    fn time_until_next_deadline(door_timer: &Timer, motor_watchdog: &Timer) -> Duration {
-        [door_timer.remaining(), motor_watchdog.remaining()]
+    fn time_until_next_deadline(door_timer: &Timer, motor_watchdog: &Timer, obstruction_timer: &Timer) -> Duration {
+        [door_timer.remaining(), motor_watchdog.remaining(), obstruction_timer.remaining()]
             .into_iter()
             .flatten()
             .min()
