@@ -26,16 +26,10 @@ type BinaryOutput = HashMap<String, [[bool; N_BUTTONS]; N_FLOORS]>;
 
 fn build_input(wv: &WorldView) -> AssignerInput {
     let order_table = &wv.order_table;
-    let mut hall_requests = [[false; N_DIRS]; N_FLOORS];
-    'pick_one: for floor in 0..N_FLOORS {
-        for dir in 0..N_DIRS {
-            let order = &order_table.hall[floor][dir];
-            if order.state == OrderState::Confirmed && order.assigned_to.is_none() {
-                hall_requests[floor][dir] = true;
-                break 'pick_one;
-            }
-        }
-    }
+    let hall_requests = std::array::from_fn(|floor| [
+        order_table.hall[floor][0].state == OrderState::Confirmed && order_table.hall[floor][0].assigned_to.is_none(),
+        order_table.hall[floor][1].state == OrderState::Confirmed && order_table.hall[floor][1].assigned_to.is_none(),
+    ]);
     let self_id = wv.self_id;
     let states = (0..N_NODES)
         .filter(|&id| !wv.node_states.get(id).stuck && (id == self_id || wv.peer_monitor.is_available(id)))
@@ -131,26 +125,6 @@ mod tests {
         assert!(input.hall_requests[0][0], "Floor 0 HallUp should be included (confirmed + unassigned)");
         assert!(!input.hall_requests[1][1], "Floor 1 HallDown should be excluded (assigned)");
         assert!(!input.hall_requests[2][0], "Floor 2 HallUp should be excluded (unconfirmed)");
-    }
-
-    #[test]
-    fn build_input_includes_at_most_one_hall_order() {
-        let mut wv = WorldView::new(0);
-
-        // Multiple eligible hall orders exist.
-        wv.order_table.set_hall_order_state(0, Button::HallUp, OrderState::Confirmed);
-        wv.order_table.set_hall_order_state(2, Button::HallDown, OrderState::Confirmed);
-
-        let input = build_input(&wv);
-        let true_count = input
-            .hall_requests
-            .iter()
-            .flat_map(|row| row.iter())
-            .filter(|&&v| v)
-            .count();
-
-        assert_eq!(true_count, 1, "hall_requests should contain at most one order");
-        assert!(input.hall_requests[0][0], "Expected deterministic first eligible order (floor 0 HallUp)");
     }
 
     #[test]
