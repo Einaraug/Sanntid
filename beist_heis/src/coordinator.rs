@@ -2,9 +2,8 @@ use crate::elev_algo::elevator::{Button, Elevator, N_FLOORS, N_BUTTONS};
 use crate::elev_algo::fsm::CompletedOrder;
 use crate::elevio::elev as hw;
 use crate::elevio::poll::ButtonEvent;
-use crate::orders::{OrderState, OrderTable, UNASSIGNED};
+use crate::orders::{OrderState, OrderTable};
 use crate::world_view::WorldView;
-use crate::counters;
 use crossbeam_channel as cbc;
 use std::time::{Duration, Instant};
 
@@ -52,7 +51,7 @@ pub fn run(
             recv(from_fsm_state) -> msg => {
                 let node_state = unwrap_or_break!(msg);
                 let was_stuck = wv.node_states.get(wv.self_id).stuck;
-                
+
                 if node_state != wv.node_states.get(wv.self_id) { // Avoids redundant updates to node_states
                     let changes = wv.node_states.set(wv.self_id, node_state);
                     wv.counters.apply(changes);
@@ -83,7 +82,7 @@ pub fn run(
                     let changes = wv.peer_monitor.mark_seen(peer_wv.self_id);
                     wv.counters.apply(changes);
 
-                    counters::merge(&mut wv, &peer_wv);
+                    wv.merge_from(&peer_wv);
                 }
             },
 
@@ -96,7 +95,7 @@ pub fn run(
                         let current_order   = wv.order_table.get_hall_order(floor, btn.to_index());
 
                         if should_assign(&suggested_order, &current_order, &wv) {
-                            let changes = wv.order_table.assign_order_to(floor, btn, suggested_order.assigned_to);
+                            let changes = wv.order_table.assign_order_to(floor, btn, wv.self_id);
                             wv.counters.apply(changes);
                         }
                     }
@@ -106,7 +105,7 @@ pub fn run(
             default(BROADCAST_INTERVAL) => {} // Ensures loop is left upon no messages
         }
 
-        // After all updates are recieved. Check and apply 
+        // After all updates are received. Check and apply
         let changes = wv.order_table.try_confirm_orders(&wv.peer_monitor.availability);
         wv.counters.apply(changes);
 
@@ -121,9 +120,9 @@ pub fn run(
             last_peer_check = Instant::now();
         }
 
-        update_lights(&wv, &hw); //DO OWN THREAD
+        update_lights(&wv, &hw);
 
-        let requests = wv.order_table.convert_to_requests(wv.self_id);
+        let requests = wv.order_table.build_fsm_request_table(wv.self_id);
         if requests != last_sent_requests {
             let _ = to_fsm.send(requests);
             last_sent_requests = requests;
@@ -138,11 +137,10 @@ pub fn run(
     }
 }
 
-// Helper functions
 fn should_assign(suggested: &crate::orders::HallOrder, current: &crate::orders::HallOrder, wv: &WorldView) -> bool {
-    suggested.assigned_to == wv.self_id
-        && current.assigned_to == UNASSIGNED
-        && current.state   == OrderState::Confirmed
+    suggested.assigned_to == Some(wv.self_id)
+        && current.assigned_to.is_none()
+        && current.state == OrderState::Confirmed
         && !wv.node_states.get(wv.self_id).stuck
 }
 

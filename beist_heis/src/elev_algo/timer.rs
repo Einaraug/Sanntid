@@ -1,6 +1,4 @@
-use std::time::Instant;
-use std::time::Duration;
-
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Default)]
 pub struct Timer {
@@ -9,13 +7,11 @@ pub struct Timer {
 
 impl Timer {
     pub fn new() -> Self {
-        Self {
-            end_time: None,
-        }
+        Self { end_time: None }
     }
 
-    pub fn start(&mut self, duration_secs: f64) {
-        self.end_time = Some(Instant::now() + Duration::from_secs_f64(duration_secs));
+    pub fn start(&mut self, duration: Duration) {
+        self.end_time = Some(Instant::now() + duration);
     }
 
     pub fn timed_out(&self) -> bool {
