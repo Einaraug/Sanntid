@@ -42,12 +42,13 @@ impl WorldView {
             for btn in [Button::HallUp, Button::HallDown] {
                 let local_ct = self.counters.get_hall_order(floor, btn);
                 let incoming_ct = incoming.counters.get_hall_order(floor, btn);
+                
                 if incoming_ct > local_ct {
                     let hall_order = incoming.order_table.get_hall_order(floor, btn.to_index());
                     self.order_table.set_hall_order(floor, btn, hall_order);
                     self.order_table.set_seen_by_hall(floor, btn, self.self_id);
                     self.counters.set_hall_order(floor, btn, incoming_ct);
-                } 
+                }  
                 else if incoming_ct == local_ct {
                     self.order_table.set_seen_by_hall(floor, btn, incoming.self_id);
                 }
@@ -60,6 +61,7 @@ impl WorldView {
             for node_id in 0..N_NODES {
                 let local_ct = self.counters.get_cab_order(floor, node_id);
                 let incoming_ct = incoming.counters.get_cab_order(floor, node_id);
+                
                 if incoming_ct > local_ct {
                     let cab_order = incoming.order_table.get_cab_order(floor, node_id);
                     self.order_table.set_cab_order(floor, node_id, cab_order);
@@ -77,6 +79,7 @@ impl WorldView {
         for node_id in 0..N_NODES {
             let local_ct = self.counters.get_peer_availability(node_id);
             let incoming_ct = incoming.counters.get_peer_availability(node_id);
+            
             if incoming_ct > local_ct {
                 let is_available = incoming.peer_monitor.availability[node_id];
                 self.peer_monitor.set(node_id, is_available);
@@ -89,6 +92,7 @@ impl WorldView {
         for node_id in 0..N_NODES {
             let local_ct = self.counters.get_elevator(node_id);
             let incoming_ct = incoming.counters.get_elevator(node_id);
+            
             if incoming_ct > local_ct {
                 let elevator = incoming.node_states.get(node_id);
                 let _ = self.node_states.set(node_id, elevator);

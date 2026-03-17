@@ -94,21 +94,15 @@ fn main() {
     thread::spawn(move || fsm.run(hw_elev, sensor_rx, order_rx, state_tx, completed_tx));
     
     thread::spawn(move || assigner::run(to_assigner_rx, from_assigner_tx, ASSIGNER_PATH));
-
-    // ═══════════════════════════════════════════════════════════════
-    // Thread 6: UDP TX
-    // ═══════════════════════════════════════════════════════════════
+    
     thread::spawn(move || {
         network::bcast::broadcast_udp(WV_PORT, to_net_rx).unwrap();
     });
-
-    // ═══════════════════════════════════════════════════════════════
-    // Thread 7: UDP RX
-    // ═══════════════════════════════════════════════════════════════
+    
     thread::spawn(move || {
         network::bcast::receive_udp(WV_PORT, from_net_tx).unwrap();
     });
 
-    // Keep the main thread alive (all work is done in spawned threads)
+    // Keep the main thread alive
     loop { thread::sleep(Duration::MAX); }
 }

@@ -9,7 +9,6 @@ use std::time::{Duration, Instant};
 const BROADCAST_INTERVAL: Duration = Duration::from_millis(100);
 const PEER_TIMEOUT_INTERVAL: Duration = Duration::from_millis(500);
 
-/// Extracts Ok(val) from a channel recv result, or breaks the loop on disconnect.
 macro_rules! unwrap_or_break {
     ($msg:expr) => {
         match $msg {
@@ -32,16 +31,16 @@ pub fn run(
     to_lights: cbc::Sender<OrderTable>,
 )
 {
-    let mut last_broadcast = Instant::now(); // Limits WorldView transmission frequency to the network
-    let mut last_peer_check = Instant::now(); // Limits peer timeout check frequency
-    let mut last_sent_requests = [[false; N_BUTTONS]; N_FLOORS]; // Avoids redundant pushes to FSM
+    let mut last_broadcast = Instant::now(); 
+    let mut last_peer_check = Instant::now(); 
+    let mut last_sent_requests = [[false; N_BUTTONS]; N_FLOORS];
 
     loop {
         cbc::select! {
             recv(from_buttons) -> msg => {
                 let btn = unwrap_or_break!(msg);
 
-                if let Some(button) = Button::from_index(btn.button as usize) { // Ensures no invalid button input
+                if let Some(button) = Button::from_index(btn.button as usize) {
                     let changes = wv.order_table.on_btn_press(btn.floor as usize, button, wv.self_id);
                     wv.counters.apply(changes);
                 }
@@ -49,14 +48,13 @@ pub fn run(
 
             recv(from_fsm_state) -> msg => {
                 let node_state = unwrap_or_break!(msg);
-                let was_stuck = wv.node_states.get(wv.self_id).stuck;
 
-                if node_state != wv.node_states.get(wv.self_id) { // Avoids redundant updates to node_states
+                let was_stuck = wv.node_states.get(wv.self_id).stuck;
+                if node_state != wv.node_states.get(wv.self_id) {
                     let changes = wv.node_states.set(wv.self_id, node_state);
                     wv.counters.apply(changes);
                 }
-
-                // Newly stuck: unassign our orders so other elevators pick them up
+                
                 if node_state.stuck && !was_stuck {
                     let changes = wv.order_table.unassign_orders_for(wv.self_id);
                     wv.counters.apply(changes);
@@ -65,6 +63,7 @@ pub fn run(
 
             recv(from_fsm_completed) -> msg => {
                 let completed_order = unwrap_or_break!(msg);
+
                 let changes = match completed_order.button {
                     Button::HallUp | Button::HallDown =>
                         wv.order_table.clear_hall_order(completed_order.floor, completed_order.button),
@@ -77,10 +76,9 @@ pub fn run(
             recv(from_network) -> msg => {
                 let peer_wv = unwrap_or_break!(msg);
 
-                if peer_wv.self_id != wv.self_id { // Ignore own UDP broadcast
+                if peer_wv.self_id != wv.self_id {
                     let changes = wv.peer_monitor.mark_seen(peer_wv.self_id);
                     wv.counters.apply(changes);
-
                     wv.merge_from(&peer_wv);
                 }
             },
@@ -92,7 +90,6 @@ pub fn run(
                     for btn in [Button::HallUp, Button::HallDown] {
                         let suggested_order = assigned.get_hall_order(floor, btn.to_index());
                         let current_order   = wv.order_table.get_hall_order(floor, btn.to_index());
-
                         if should_assign(&suggested_order, &current_order, &wv) {
                             let changes = wv.order_table.assign_order_to(floor, btn, wv.self_id);
                             wv.counters.apply(changes);
@@ -101,33 +98,30 @@ pub fn run(
                 }
             },
 
-            default(BROADCAST_INTERVAL) => {} // Ensures loop is left upon no messages
+            default(BROADCAST_INTERVAL) => {} 
         }
-
-        // After all updates are received. Check and apply
         let changes = wv.order_table.try_confirm_orders(&wv.peer_monitor.availability);
         wv.counters.apply(changes);
-
+        
         if last_peer_check.elapsed() >= PEER_TIMEOUT_INTERVAL {
-            let (dead, changes) = wv.peer_monitor.expire_stale_peers();
+            let (stale_peers, changes) = wv.peer_monitor.expire_stale_peers();
             wv.counters.apply(changes);
-
-            for node_id in dead {
+            
+            for node_id in stale_peers {
                 let changes = wv.order_table.unassign_orders_for(node_id);
                 wv.counters.apply(changes);
             }
             last_peer_check = Instant::now();
         }
 
-        let _ = to_lights.try_send(wv.order_table.clone());
-
         let requests = wv.order_table.build_fsm_request_table(wv.self_id);
         if requests != last_sent_requests {
             let _ = to_fsm.send(requests);
             last_sent_requests = requests;
         }
-
+        
         let _ = to_assigner.try_send(wv.clone());
+        let _ = to_lights.try_send(wv.order_table.clone());
 
         if last_broadcast.elapsed() >= BROADCAST_INTERVAL {
             let _ = to_network.send(wv.clone());

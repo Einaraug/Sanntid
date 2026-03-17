@@ -1,12 +1,15 @@
 #![allow(dead_code)]
-
 use std::fmt;
 use std::io::*;
 use std::net::TcpStream;
 use std::sync::*;
 
-/// TCP connection with the elevator
+// Based on TTK4145 course github
+// Authors: Henrik Horluck, klasbo
+// Availability: https://github.com/TTK4145/driver-rust
 
+
+//TCP connection with the elevator
 #[derive(Clone, Debug)]
 pub struct Elevator {
     socket: Arc<Mutex<TcpStream>>,

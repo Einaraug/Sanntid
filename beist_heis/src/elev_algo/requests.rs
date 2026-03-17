@@ -1,7 +1,5 @@
 use crate::elev_algo::elevator::*;
 
-/// Handles the requests of the elevator
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DirnBehaviour {
     pub dirn: Dirn,

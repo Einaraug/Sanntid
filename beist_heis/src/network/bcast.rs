@@ -10,12 +10,11 @@ use super::sock;
 
 const UDP_BUF_SIZE: usize = 4096;
 
-// Broadcast and receive udp-packages
-// From https://github.com/TTK4145/network-rust/blob/master/src/udpnet/bcast.rs //TODO: keep this?
 
+// Based on TTK4145 course github
+// Authors: Henrik Horluck, klasbo
+// Availability: https://github.com/TTK4145/network-rust/blob/master/src/udpnet/bcast.rs
 
-/// Serializes values received from `tx_channel` to JSON and broadcasts them over UDP.
-/// Runs forever — intended to be spawned as a dedicated thread.
 pub fn broadcast_udp<T: serde::Serialize>(port: u16, tx_channel: cbc::Receiver<T>) -> std::io::Result<()> {
     let (socket, broadcast_addr) = sock::new_broadcast_socket(port)?;
 
@@ -28,8 +27,6 @@ pub fn broadcast_udp<T: serde::Serialize>(port: u16, tx_channel: cbc::Receiver<T
     }
 }
 
-/// Listens for incoming UDP packets, deserializes them from JSON, and forwards
-/// them to `rx_channel`. Runs forever — intended to be spawned as a dedicated thread.
 pub fn receive_udp<T: serde::de::DeserializeOwned>(port: u16, rx_channel: cbc::Sender<T>) -> std::io::Result<()> {
     let socket  = sock::new_receiver_socket(port)?;
     let mut buf: [MaybeUninit<u8>; UDP_BUF_SIZE] = [MaybeUninit::uninit(); UDP_BUF_SIZE];
@@ -42,12 +39,6 @@ pub fn receive_udp<T: serde::de::DeserializeOwned>(port: u16, rx_channel: cbc::S
     }
 }
 
-
-// Private helpers
-
-/// Reads one UDP packet from `socket` into `buf` and deserializes it into `T`.
-/// Uses MaybeUninit buffer to avoid zeroing memory on every call — recv() fills
-/// it before we read it, so the unsafe slice construction is sound.
 fn deserialize_packet<'a, T: Deserialize<'a>>(
     socket: &'_ Socket,
     buf:    &'a mut [MaybeUninit<u8>; UDP_BUF_SIZE],
