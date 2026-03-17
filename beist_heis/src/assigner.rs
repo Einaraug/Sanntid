@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::process::{Command, Stdio};
 use serde::Serialize;
-use crate::world_view::*;
+use crate::world_view::{WorldView, N_NODES, N_DIRS};
 use crate::elev_algo::elevator::{N_FLOORS, N_BUTTONS, Dirn, Behaviour, Button};
 use crate::orders::{OrderState, OrderTable};
 use crossbeam_channel as cbc;

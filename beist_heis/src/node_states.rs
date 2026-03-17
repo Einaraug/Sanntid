@@ -1,7 +1,7 @@
 use crate::elev_algo::elevator::Elevator;
 use crate::world_view::N_NODES;
 use serde::{Serialize, Deserialize};
-use crate::counters::{Change};
+use crate::counters::Change;
 
 // Holds internal states for all nodes
 #[derive(Clone, Serialize, Deserialize)]
