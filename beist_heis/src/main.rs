@@ -65,6 +65,9 @@ fn main() {
     // assigner → coordinator (assigned OrderTable)
     let (from_assigner_tx, from_assigner_rx) = cbc::unbounded::<OrderTable>();
 
+    // coordinator → lights thread (bounded(1): always latest, drops if busy)
+    let (to_lights_tx, to_lights_rx) = cbc::bounded::<OrderTable>(1);
+
     // ═══════════════════════════════════════════════════════════════
     // Thread 1: hw_poll_buttons → Coordinator
     // ═══════════════════════════════════════════════════════════════
@@ -80,9 +83,14 @@ fn main() {
     // ═══════════════════════════════════════════════════════════════
     // Thread 3: Coordinator
     // ═══════════════════════════════════════════════════════════════
-    let hw3 = hw_elev.clone();
     let wv = WorldView::new(self_id);
-    thread::spawn(move || coordinator::run(btn_rx, from_net_rx, state_rx, completed_rx, from_assigner_rx, wv, hw3, order_tx, to_net_tx, to_assigner_tx));
+    thread::spawn(move || coordinator::run(btn_rx, from_net_rx, state_rx, completed_rx, from_assigner_rx, wv, order_tx, to_net_tx, to_assigner_tx, to_lights_tx));
+
+    // ═══════════════════════════════════════════════════════════════
+    // Thread 3b: Lights
+    // ═══════════════════════════════════════════════════════════════
+    let hw3 = hw_elev.clone();
+    thread::spawn(move || elevio::lights::run(hw3, self_id, to_lights_rx));
 
     // ═══════════════════════════════════════════════════════════════
     // Thread 4: FSM

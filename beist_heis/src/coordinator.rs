@@ -1,6 +1,5 @@
 use crate::elev_algo::elevator::{Button, Elevator, N_FLOORS, N_BUTTONS};
 use crate::elev_algo::fsm::CompletedOrder;
-use crate::elevio::elev as hw;
 use crate::elevio::poll::ButtonEvent;
 use crate::orders::{OrderState, OrderTable};
 use crate::world_view::WorldView;
@@ -27,10 +26,10 @@ pub fn run(
     from_fsm_completed: cbc::Receiver<CompletedOrder>,
     from_assigner: cbc::Receiver<OrderTable>,
     mut wv: WorldView,
-    hw: hw::Elevator,
     to_fsm: cbc::Sender<[[bool; N_BUTTONS]; N_FLOORS]>,
     to_network: cbc::Sender<WorldView>,
     to_assigner: cbc::Sender<WorldView>,
+    to_lights: cbc::Sender<OrderTable>,
 )
 {
     let mut last_broadcast = Instant::now(); // Limits WorldView transmission frequency to the network
@@ -120,7 +119,7 @@ pub fn run(
             last_peer_check = Instant::now();
         }
 
-        update_lights(&wv, &hw);
+        let _ = to_lights.try_send(wv.order_table.clone());
 
         let requests = wv.order_table.build_fsm_request_table(wv.self_id);
         if requests != last_sent_requests {
@@ -144,13 +143,3 @@ fn should_assign(suggested: &crate::orders::HallOrder, current: &crate::orders::
         && !wv.node_states.get(wv.self_id).stuck
 }
 
-fn update_lights(wv: &WorldView, hw: &hw::Elevator) {
-    for floor in 0..N_FLOORS {
-        for btn in [Button::HallUp, Button::HallDown] {
-            let turn_on = wv.order_table.get_hall_order(floor, btn.to_index()).state == OrderState::Confirmed;
-            hw.call_button_light(floor as u8, btn.to_index() as u8, turn_on);
-        }
-        let turn_on = wv.order_table.get_cab_order(floor, wv.self_id).state == OrderState::Confirmed;
-        hw.call_button_light(floor as u8, Button::Cab.to_index() as u8, turn_on);
-    }
-}
