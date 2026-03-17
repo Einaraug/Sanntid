@@ -5,7 +5,7 @@ use crossbeam_channel as cbc;
 use std::time::Duration;
 
 const MOTOR_TIMEOUT: Duration = Duration::from_secs(4);
-const OBSTRUCTION_TIMEOUT: Duration = Duration::from_secs(10);
+const OBSTRUCTION_TIMEOUT: Duration = Duration::from_secs(8);
 
 #[derive(Debug, Clone, Default)]
 pub struct FsmOutput {
