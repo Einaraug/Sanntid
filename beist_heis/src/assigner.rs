@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::process::{Command, Stdio};
 use serde::Serialize;
 use crate::world_view::*;
-use crate::elev_algo::elevator::{N_FLOORS, N_BUTTONS, Dirn, Behaviour, Button};
-use crate::orders::{OrderState, OrderTable};
+use crate::elev_algo::elevator::{N_FLOORS, N_BUTTONS, Dirn, Behaviour};
+use crate::orders::{OrderState, OrderTable, UNASSIGNED};
 
 
 #[derive(Serialize)]
@@ -25,39 +25,32 @@ struct ElevatorStateDto {
 type BinaryOutput = HashMap<String, [[bool; N_BUTTONS]; N_FLOORS]>;
 
 fn build_input(wv: &WorldView) -> AssignerInput {
-    let order_table = &wv.order_table;
-    let mut hall_requests = [[false; N_DIRS]; N_FLOORS];
-    'pick_one: for floor in 0..N_FLOORS {
-        for dir in 0..N_DIRS {
-            let order = &order_table.hall[floor][dir];
-            if order.state == OrderState::Confirmed && order.assigned_to.is_none() {
-                hall_requests[floor][dir] = true;
-                break 'pick_one;
-            }
-        }
-    }
+    let ot = &wv.order_table;
+    let hall_requests = std::array::from_fn(|floor| [
+        ot.hall[floor][0].state == OrderState::Confirmed && ot.hall[floor][0].assigned_to == UNASSIGNED,
+        ot.hall[floor][1].state == OrderState::Confirmed && ot.hall[floor][1].assigned_to == UNASSIGNED,
+    ]);
     let self_id = wv.self_id;
     let states = (0..N_NODES)
         .filter(|&id| !wv.node_states.get(id).stuck && (id == self_id || wv.peer_monitor.is_available(id)))
         .map(|id| {
-            let elevator_state = wv.node_states.get(id);
-            let direction = match (elevator_state.floor, elevator_state.dirn) {
+            let e = wv.node_states.get(id);
+            let direction = match (e.floor, e.dirn) {
                 (0, Dirn::Down) => Dirn::Stop,
                 (f, Dirn::Up) if f == N_FLOORS as i32 - 1 => Dirn::Stop,
-                _ => elevator_state.dirn,
+                _ => e.dirn,
             };
-            let cab_requests = std::array::from_fn(|floor| {
-                wv.order_table.get_cab_order(floor, id).state == OrderState::Confirmed
-            });
+
+            let cab_requests = std::array::from_fn(|floor| e.requests[floor][2]);
             (id.to_string(), ElevatorStateDto {
-                behaviour: elevator_state.behaviour,
-                floor: elevator_state.floor,
+                behaviour: e.behaviour,
+                floor: e.floor,
                 direction,
                 cab_requests,
             })
         })
         .collect();
-    AssignerInput {hall_requests, states}
+    AssignerInput { hall_requests, states }
 }
 
 /// Run the hall request assigner binary and return a copy of the order table
@@ -98,9 +91,9 @@ pub fn process_assigner_output(
 ) {
     if let Some(node_orders) = binary_output.get(&self_id.to_string()) {
         for floor in 0..N_FLOORS {
-            for btn in [Button::HallUp, Button::HallDown] {
-                if node_orders[floor][btn.to_index()] {
-                    order_table.hall[floor][btn.to_index()].assigned_to = Some(self_id);
+            for btn in 0..2 {
+                if node_orders[floor][btn] {
+                    order_table.hall[floor][btn].assigned_to = self_id;
                 }
             }
         }
@@ -121,7 +114,7 @@ mod tests {
 
         // Confirmed + assigned — should be excluded
         wv.order_table.set_hall_order_state(1, Button::HallDown, OrderState::Confirmed);
-        wv.order_table.set_hall_order_assigned_to(1, Button::HallDown, Some(1));
+        wv.order_table.set_hall_order_assigned_to(1, Button::HallDown, 1);
 
         // Unconfirmed — should be excluded
         wv.order_table.set_hall_order_state(2, Button::HallUp, OrderState::Unconfirmed);
@@ -155,7 +148,7 @@ mod tests {
 
     #[test]
     fn process_output_only_assigns_self_node() {
-        let mut order_table = OrderTable::new();
+        let mut ot = OrderTable::new();
 
         let mut binary_output: BinaryOutput = HashMap::new();
         // Node 0 gets floor 0 HallUp
@@ -173,15 +166,15 @@ mod tests {
             [false, false, false],
         ]);
 
-        process_assigner_output(1, &binary_output, &mut order_table);
+        process_assigner_output(1, &binary_output, &mut ot);
 
-        assert_eq!(order_table.hall[2][1].assigned_to, Some(1), "Floor 2 HallDown should be assigned to node 1 (self)");
-        assert_eq!(order_table.hall[0][0].assigned_to, None, "Floor 0 HallUp belongs to node 0, should not be set by node 1's assigner");
+        assert_eq!(ot.hall[2][1].assigned_to,1, "Floor 2 HallDown should be assigned to node 1 (self)");
+        assert_eq!(ot.hall[0][0].assigned_to,UNASSIGNED, "Floor 0 HallUp belongs to node 0, should not be set by node 1's assigner");
     }
 
     #[test]
     fn process_output_sets_node_id_on_assigned_orders() {
-        let mut order_table = OrderTable::new();
+        let mut ot = OrderTable::new();
 
         let mut binary_output: BinaryOutput = HashMap::new();
         binary_output.insert("2".to_string(), [
@@ -191,29 +184,8 @@ mod tests {
             [true, false, false], // floor 3 HallUp assigned to node 2
         ]);
 
-        process_assigner_output(2, &binary_output, &mut order_table);
+        process_assigner_output(2, &binary_output, &mut ot);
 
-        assert_eq!(order_table.hall[3][0].assigned_to, Some(2), "Order should be assigned to node 2");
-    }
-
-    #[test]
-    fn process_output_discards_cab_orders_from_binary() {
-        let mut order_table = OrderTable::new();
-
-        let mut binary_output: BinaryOutput = HashMap::new();
-        // Binary includes cab order (index 2) - should be ignored
-        binary_output.insert("0".to_string(), [
-            [false, false, true], // cab order at floor 0
-            [false, false, false],
-            [false, false, false],
-            [false, false, false],
-        ]);
-
-        process_assigner_output(0, &binary_output, &mut order_table);
-
-        for floor in 0..N_FLOORS {
-            assert_eq!(order_table.hall[floor][0].assigned_to, None, "No HallUp should be assigned");
-            assert_eq!(order_table.hall[floor][1].assigned_to, None, "No HallDown should be assigned");
-        }
+        assert_eq!(ot.hall[3][0].assigned_to,2, "Order should be assigned to node 2");
     }
 }

@@ -6,7 +6,7 @@ mod network;
 mod orders;
 mod assigner;
 mod counters;
-mod coordinator;
+mod node;
 mod node_states;
 mod gui;
 
@@ -38,38 +38,38 @@ fn main() {
     // Channels
     // ═══════════════════════════════════════════════════════════════
 
-    // hw_poll_buttons → coordinator
+    // hw_poll_buttons → node
     let (btn_tx, btn_rx) = cbc::unbounded::<ButtonEvent>();
 
     // hw_poll_sensors → fsm
     let (sensor_tx, sensor_rx) = cbc::unbounded::<SensorEvent>();
 
-    // coordinator → fsm (full request table)
+    // node → fsm (full request table)
     let (order_tx, order_rx) = cbc::unbounded::<[[bool; N_BUTTONS]; N_FLOORS]>();
 
-    // fsm → coordinator (elevator state)
+    // fsm → node (elevator state)
     let (state_tx, state_rx) = cbc::unbounded::<Elevator>();
 
-    // fsm → coordinator (completed orders)
+    // fsm → node (completed orders)
     let (completed_tx, completed_rx) = cbc::unbounded::<CompletedOrder>();
 
-    // coordinator → udp_tx
+    // node → udp_tx
     let (to_net_tx, to_net_rx) = cbc::unbounded::<WorldView>();
 
-    // udp_rx → coordinator
+    // udp_rx → node
     let (from_net_tx, from_net_rx) = cbc::unbounded::<WorldView>();
 
-    // coordinator → assigner (bounded(1): always sends latest snapshot, drops if busy)
+    // node → assigner (bounded(1): always sends latest snapshot, drops if busy)
     let (to_assigner_tx, to_assigner_rx) = cbc::bounded::<WorldView>(1);
 
-    // coordinator → gui (bounded(1): always shows latest snapshot, drops if busy)
+    // node → gui (bounded(1): always shows latest snapshot, drops if busy)
     let (to_gui_tx, to_gui_rx) = cbc::bounded::<WorldView>(1);
 
-    // assigner → coordinator (assigned OrderTable)
+    // assigner → node (assigned OrderTable)
     let (from_assigner_tx, from_assigner_rx) = cbc::unbounded::<OrderTable>();
 
     // ═══════════════════════════════════════════════════════════════
-    // Thread 1: hw_poll_buttons → Coordinator
+    // Thread 1: hw_poll_buttons → Node
     // ═══════════════════════════════════════════════════════════════
     let hw1 = hw_elev.clone();
     thread::spawn(move || poll::poll_buttons(hw1, btn_tx, POLL_PERIOD));
@@ -81,11 +81,11 @@ fn main() {
     thread::spawn(move || poll::poll_sensors(hw2, sensor_tx, POLL_PERIOD));
 
     // ═══════════════════════════════════════════════════════════════
-    // Thread 3: Coordinator
+    // Thread 3: Node
     // ═══════════════════════════════════════════════════════════════
     let hw3 = hw_elev.clone();
     let wv = WorldView::new(self_id);
-    thread::spawn(move || coordinator::run(btn_rx, from_net_rx, state_rx, completed_rx, from_assigner_rx, wv, hw3, order_tx, to_net_tx, to_assigner_tx, to_gui_tx));
+    thread::spawn(move || node::run(btn_rx, from_net_rx, state_rx, completed_rx, from_assigner_rx, wv, hw3, order_tx, to_net_tx, to_assigner_tx, to_gui_tx));
 
     // ═══════════════════════════════════════════════════════════════
     // Thread 4: FSM

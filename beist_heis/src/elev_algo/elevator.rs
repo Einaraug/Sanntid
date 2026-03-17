@@ -1,9 +1,8 @@
 use serde::{Serialize, Deserialize};
-use std::time::Duration;
 
 pub const N_FLOORS: usize = 4;
 pub const N_BUTTONS: usize = 3;
-pub const DOOR_OPEN_DURATION: Duration = Duration::from_secs(2);
+pub const DOOR_OPEN_DURATION: f64 = 2.0;
 
 /// Motor direction commanded to the hardware.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -57,6 +56,7 @@ pub struct Elevator {
     pub dirn: Dirn,
     pub requests: [[bool; N_BUTTONS]; N_FLOORS],
     pub behaviour: Behaviour,
+    pub door_open_duration_s: f64,
     pub stuck: bool,
 }
 
@@ -67,6 +67,7 @@ impl Elevator {
             dirn: Dirn::Stop,
             requests: [[false; N_BUTTONS]; N_FLOORS],
             behaviour: Behaviour::Idle,
+            door_open_duration_s: DOOR_OPEN_DURATION,
             stuck: false,
         }
     }

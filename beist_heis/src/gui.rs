@@ -3,7 +3,7 @@ use std::thread;
 use std::time::Duration;
 use crate::world_view::{WorldView, N_NODES};
 use crate::elev_algo::elevator::{N_FLOORS, Button};
-use crate::orders::OrderState;
+use crate::orders::{OrderState, UNASSIGNED};
 
 const REFRESH: Duration = Duration::from_millis(200);
 
@@ -92,7 +92,7 @@ fn fmt_hall(order: &crate::orders::HallOrder) -> String {
     match order.state {
         OrderState::None        => "-".to_string(),
         OrderState::Unconfirmed => "unconf".to_string(),
-        OrderState::Confirmed if order.assigned_to.is_none() => "conf (unassigned)".to_string(),
-        OrderState::Confirmed   => format!("conf → {}", order.assigned_to.unwrap()),
+        OrderState::Confirmed if order.assigned_to == UNASSIGNED => "conf (unassigned)".to_string(),
+        OrderState::Confirmed   => format!("conf → {}", order.assigned_to),
     }
 }
