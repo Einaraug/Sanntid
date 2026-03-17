@@ -4,7 +4,6 @@ use crate::world_view::N_NODES;
 use serde::{Serialize, Deserialize};
 use std::time::Duration;
 
-// If a peer misses 5 broadcast ticks, it is considered timed out.
 pub const PEER_TIMEOUT: Duration = Duration::from_millis(500);
 
 // Keeps track of and updates availability of all nodes.
@@ -25,7 +24,6 @@ impl PeerMonitor {
         }
     }
 
-    // Set availability for a node. Returns true if value flipped.
     pub fn set(&mut self, node_id: usize, availability: bool) -> bool {
         let previous_availability = self.availability[node_id];
         if previous_availability != availability {
@@ -39,7 +37,6 @@ impl PeerMonitor {
         self.availability[node_id]
     }
 
-    /// Called when a message from a peer is received. Resets the peer's timeout timer.
     pub fn mark_seen(&mut self, node_id: usize) -> Vec<Change> {
         let mut changes = Vec::new();
         let flipped = self.set(node_id, true);
@@ -50,18 +47,16 @@ impl PeerMonitor {
         changes
     }
 
-    /// Check all nodes for timeout. Returns (timed-out node_ids, changes).
     pub fn expire_stale_peers(&mut self) -> (Vec<usize>, Vec<Change>) {
         let mut changes = Vec::new();
-        let mut dead = Vec::new();
-
+        let mut stale_peers = Vec::new();
         for node_id in 0..N_NODES {
             if self.is_available(node_id) && self.timers[node_id].timed_out() {
                 self.availability[node_id] = false;
                 changes.push(Change::PeerAvailability { node_id });
-                dead.push(node_id);
+                stale_peers.push(node_id);
             }
         }
-        (dead, changes)
+        (stale_peers, changes)
     }
 }

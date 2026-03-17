@@ -42,7 +42,6 @@ impl CabOrder {
     }
 }
 
-// Holds all orders for all nodes
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrderTable {
     pub hall: [[HallOrder; N_DIRS]; N_FLOORS],
@@ -86,9 +85,6 @@ impl OrderTable {
         self.cab[floor][node_id].seen_by[observer_node_id] = true;
     }
 
-    // Order lifecycle
-
-    // Sets OrderState to Unconfirmed from OrderState::None
     pub fn on_btn_press(&mut self, floor: usize, btn: Button, self_id: usize) -> Vec<Change> {
         match btn {
             Button::HallUp | Button::HallDown => {
@@ -111,10 +107,8 @@ impl OrderTable {
         }
     }
 
-    // If an order is seen by all available nodes, sets OrderState to Confirmed from Unconfirmed
     pub fn try_confirm_orders(&mut self, peer_availability: &[bool; N_NODES]) -> Vec<Change> {
         let mut changes = Vec::new();
-
         for floor in 0..N_FLOORS {
             for node_id in 0..N_NODES {
                 let cab_order = self.cab[floor][node_id];
@@ -138,6 +132,7 @@ impl OrderTable {
         self.hall[floor][btn.to_index()] = HallOrder::new();
         vec![Change::HallOrder {floor, btn}]
     }
+    
     pub fn clear_cab_order(&mut self, floor: usize, node_id: usize) -> Vec<Change> {
         self.cab[floor][node_id] = CabOrder::new();
         vec![Change::CabOrder {floor, node_id}]
@@ -147,11 +142,9 @@ impl OrderTable {
         self.set_hall_order_assigned_to(floor, btn, Some(node_id));
         vec![Change::HallOrder {floor, btn}]
     }
-
-    // If a node becomes unable to handle orders, its orders must be unassign
+    
     pub fn unassign_orders_for(&mut self, node_id: usize) -> Vec<Change> {
         let mut changes = Vec::new();
-
         for floor in 0..N_FLOORS {
             for btn in [Button::HallUp, Button::HallDown] {
                 let hall_order = self.hall[floor][btn.to_index()];
@@ -164,10 +157,8 @@ impl OrderTable {
         changes
     }
 
-    // Converts the OrderTable into the bool request table consumed by the FSM
     pub fn build_fsm_request_table(&self, self_id: usize) -> [[bool; N_BUTTONS]; N_FLOORS] {
         let mut requests = [[false; N_BUTTONS]; N_FLOORS];
-
         for floor in 0..N_FLOORS {
             if self.cab[floor][self_id].state == OrderState::Confirmed {
                 requests[floor][Button::Cab.to_index()] = true;

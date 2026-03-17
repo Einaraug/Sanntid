@@ -23,10 +23,12 @@ pub struct Counters {
 }
 
 impl Counters {
-    pub fn new() -> Self {
+    pub fn new(self_id: usize) -> Self {
+        let mut peer_availability = [0; N_NODES];
+        peer_availability[self_id] = 1;
         Self {
             elevator: [0; N_NODES],
-            peer_availability: [0; N_NODES],
+            peer_availability,
             hall_order: [[0; N_DIRS]; N_FLOORS],
             cab_order: [[0; N_NODES]; N_FLOORS],
         }
