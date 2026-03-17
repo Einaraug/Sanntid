@@ -123,4 +123,7 @@ fn main() {
     thread::spawn(move || {
         network::bcast::receive_udp(WV_PORT, from_net_tx).unwrap();
     });
+
+    // Keep the main thread alive (all work is done in spawned threads)
+    loop { thread::sleep(Duration::MAX); }
 }
