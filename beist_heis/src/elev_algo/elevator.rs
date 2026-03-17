@@ -3,9 +3,8 @@ use std::time::Duration;
 
 pub const N_FLOORS: usize = 4;
 pub const N_BUTTONS: usize = 3;
-pub const DOOR_OPEN_DURATION: Duration = Duration::from_secs(2);
+pub const DOOR_OPEN_DURATION: Duration = Duration::from_secs(3);
 
-/// Motor direction commanded to the hardware.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Dirn {
@@ -14,7 +13,6 @@ pub enum Dirn {
     Up = 1,
 }
 
-/// Which button was pressed — determines order type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Button {
     HallUp,
@@ -41,7 +39,6 @@ impl Button {
     }
 }
 
-/// FSM state of the elevator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Behaviour {

@@ -5,7 +5,7 @@ use crossbeam_channel as cbc;
 use std::time::Duration;
 
 const MOTOR_TIMEOUT: Duration = Duration::from_secs(4);
-const OBSTRUCTION_TIMEOUT: Duration = Duration::from_secs(15);
+const OBSTRUCTION_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, Default)]
 pub struct FsmOutput {
@@ -24,7 +24,6 @@ pub enum SensorEvent {
     StopButton(bool),
 }
 
-/// Message type sent from FSM to coordinator when an order is served
 pub struct CompletedOrder {
     pub floor: usize,
     pub button: Button,
@@ -36,7 +35,6 @@ impl FsmOutput {
     }
 }
 
-/// Extracts Ok(val) from a channel recv result, or breaks the loop on disconnect.
 macro_rules! unwrap_or_break {
     ($msg:expr) => {
         match $msg {
@@ -68,7 +66,6 @@ impl Elevator {
             self = new_self;
             self.apply_output(&hw, &output);
         }
-        // Always turn the door lamp off on startup; it may be stale from before a crash.
         hw.door_light(false);
 
         loop {
@@ -120,12 +117,11 @@ impl Elevator {
                                 self = new_self;
                                 self.apply_output(&hw, &output);
                                 Self::update_timers(&output, &mut door_timer, &mut motor_watchdog);
-                                // If served immediately, requests goes false→true→false in one
-                                // step and the diff below misses it — report via completed_orders.
                                 for (floor, btn) in &output.completed_orders {
                                     let _ = to_node_completed.send(CompletedOrder {floor: *floor, button: *btn});
                                 }
-                            } else if !new_requests[floor][btn] && self.requests[floor][btn] {
+                            } 
+                            else if !new_requests[floor][btn] && self.requests[floor][btn] {
                                 // Order dropped externally — clear without reporting as completed,
                                 // and sync before[] to suppress a spurious diff entry.
                                 self.requests[floor][btn] = false;
@@ -136,9 +132,6 @@ impl Elevator {
                 },
                 default(select_timeout) => {}
             }
-
-            // Door timer
-            // Evaluated after every arm — a busy orders channel starves default.
             if !obstructed && door_timer.timed_out() {
                 door_timer.cancel();
                 let (new_self, output) = self.on_door_timeout();
@@ -147,13 +140,11 @@ impl Elevator {
                 Self::update_timers(&output, &mut door_timer, &mut motor_watchdog);
             }
 
-            // Motor watchdog
             if motor_watchdog.timed_out() {
                 motor_watchdog.cancel();
                 self.stuck = true;
             }
-
-            // Obstruction watchdog
+            
             if obstruction_timer.timed_out() {
                 obstruction_timer.cancel();
                 self.stuck = true;
@@ -186,8 +177,8 @@ impl Elevator {
         }
     }
 
-    /// Returns how long the select should block before waking to check timers.
-    /// Picks the soonest active deadline, falling back to 100 ms if none are set.
+    // Returns how long the select should block before waking to check timers.
+    // Picks the soonest active deadline, falling back to 100 ms if none are set.
     fn time_until_next_deadline(door_timer: &Timer, motor_watchdog: &Timer, obstruction_timer: &Timer) -> Duration {
         [door_timer.remaining(), motor_watchdog.remaining(), obstruction_timer.remaining()]
             .into_iter()
