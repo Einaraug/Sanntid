@@ -4,6 +4,16 @@ use serde::Serialize;
 use crate::world_view::*;
 use crate::elev_algo::elevator::{N_FLOORS, N_BUTTONS, Dirn, Behaviour, Button};
 use crate::orders::{OrderState, OrderTable};
+use crossbeam_channel as cbc;
+
+pub fn run(rx: cbc::Receiver<WorldView>, tx: cbc::Sender<OrderTable>, path: &str) {
+    for wv_snapshot in rx {
+        match assign_hall_requests(&wv_snapshot, path) {
+            Ok(order_table) => { let _ = tx.send(order_table); }
+            Err(e) => eprintln!("assigner: {e}"),
+        }
+    }
+}
 
 
 #[derive(Serialize)]

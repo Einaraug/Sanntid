@@ -93,14 +93,7 @@ fn main() {
     let fsm = Elevator::new();
     thread::spawn(move || fsm.run(hw_elev, sensor_rx, order_rx, state_tx, completed_tx));
     
-    thread::spawn(move || {
-        for wv_snapshot in to_assigner_rx {
-            match assigner::assign_hall_requests(&wv_snapshot, ASSIGNER_PATH) {
-                Ok(order_table) => { let _ = from_assigner_tx.send(order_table); }
-                Err(e) => eprintln!("assigner: {e}"),
-            }
-        }
-    });
+    thread::spawn(move || assigner::run(to_assigner_rx, from_assigner_tx, ASSIGNER_PATH));
 
     // ═══════════════════════════════════════════════════════════════
     // Thread 6: UDP TX
